@@ -290,7 +290,7 @@ function drawPh(pos){
   let h = a.photos.map((b, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')"><img src="' + url(b) + '"><span>' + (i+1) + '</span></div>').join('');
   if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')"><video src="' + url(a.video) + '#t=0.5" muted playsinline></video><span>▶ video</span></div>'
                                        : '<div class="addb" onclick="vrOpen(\'' + p + '\')"><b>🎥</b>Record video</div>';
-  if (it.photo !== 'NONE') h += '<div class="addb" onclick="cam(\'' + p + '\',-1)"><b>📷</b>Camera</div><div class="addb" onclick="gal(\'' + p + '\')"><b>🖼</b>Gallery</div>';
+  if (it.photo !== 'NONE') h += '<div class="addb" onclick="gal(\'' + p + '\')"><b>📷</b>Add photo</div>';   // phone asks: Camera or Gallery
   $('p_' + pos).innerHTML = h;
 }
 const URLS = new WeakMap();
