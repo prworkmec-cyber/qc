@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WORKMEC QC</title>
+<meta name="theme-color" content="#1F4E78">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WORKMEC QC">
+<style>
+  :root{--blue:#1F4E78;--bg:#F4F6F9;--card:#fff;--line:#E1E5EB;--green:#2E7D32;--red:#C62828;--amber:#B26A00;--muted:#6B7280;--nom:#DCEAF7;--det:#E3F1E4}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:#1F2937}
+  header{background:var(--blue);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px}
+  header h1{margin:0;font-size:18px;flex:1}
+  header .sub{font-size:13px;opacity:.85}
+  header button{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:8px;padding:6px 12px;font-size:14px}
+  main{padding:12px 16px 120px;max-width:1100px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  button,select,input,textarea{font-size:16px;padding:10px 12px;border-radius:8px;border:1px solid var(--line);font-family:inherit}
+  button{border:none;color:#fff;font-weight:bold;cursor:pointer;background:var(--blue)}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  .grey{background:#6B7280} .green{background:var(--green)} .red{background:var(--red)}
+  .hidden{display:none!important}
+  #msg{position:fixed;left:16px;right:16px;bottom:96px;padding:12px;border-radius:8px;color:#fff;display:none;text-align:center;font-weight:bold;z-index:90}
+  #login{max-width:420px;margin:30px auto} #login input,#login button{width:100%;margin:8px 0} #login input{font-size:20px;text-align:center}
+  .tpl{display:block;width:100%;text-align:left;font-size:18px;padding:18px 16px;margin-bottom:10px;border-radius:10px;position:relative}
+  .tpl small{display:block;font-weight:normal;font-size:13px;opacity:.85;margin-top:4px}
+  .hdrf{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .hdrf label{font-size:13px;color:var(--muted);display:block} .hdrf input{width:100%;margin-top:4px}
+  /* inspection table: POS | DESCRIPTION | NOMINAL / DETECTED | PHOTO */
+  .th,.it{display:grid;grid-template-columns:48px minmax(120px,1.1fr) minmax(150px,1fr) minmax(220px,1.6fr);border:1px solid var(--line);border-top:none;background:#fff}
+  .th{border-top:1px solid var(--line);border-radius:10px 10px 0 0;background:var(--blue);color:#fff;font-weight:bold;font-size:13px;position:sticky;top:52px;z-index:5}
+  .th>div,.it>div{padding:10px 8px;border-right:1px solid var(--line)} .th>div:last-child,.it>div:last-child{border-right:none}
+  .it .pos{font-weight:bold;text-align:center;font-size:18px;display:flex;align-items:center;justify-content:center}
+  .it .ds{font-weight:bold;font-size:15px;display:flex;align-items:center}
+  .q{padding:0!important;display:flex;flex-direction:column}
+  .q .nom{background:var(--nom);padding:8px;font-weight:bold;font-size:16px;text-align:center;border-bottom:1px solid var(--line)}
+  .q .nom small,.q .det small{display:block;font-size:11px;color:var(--muted);font-weight:normal}
+  .q .det{background:var(--det);padding:8px;flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px}
+  .q .det input{width:100%;font-size:20px;text-align:center;font-weight:bold}
+  .q .det.ok input{border:2px solid var(--green)} .q .det.ng input{border:2px solid var(--red);color:var(--red)}
+  .res{font-size:12px;font-weight:bold;text-align:center} .det.ok .res{color:var(--green)} .det.ng .res{color:var(--red)}
+  .okng{display:flex;gap:6px} .okng button{flex:1;background:#E5E7EB;color:#1F2937;padding:12px 6px}
+  .okng button.on.ok{background:var(--green);color:#fff} .okng button.on.ng{background:var(--red);color:#fff}
+  .ph{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+  .ph .t{position:relative;width:104px;height:104px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#000}
+  .ph .t img,.ph .t video{width:100%;height:100%;object-fit:cover;display:block}
+  .ph .t span{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px}
+  .addb{width:104px;height:104px;border-radius:6px;border:2px dashed #9CA3AF;background:#F9FAFB;color:#374151;font-size:13px;font-weight:bold;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:4px;text-align:center}
+  .addb b{font-size:26px}
+  .it.miss{box-shadow:inset 4px 0 0 var(--amber)}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -4px 12px rgba(0,0,0,.08);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:30}
+  .bar .in{max-width:1100px;margin:0 auto;display:flex;gap:10px;align-items:center} .bar .in span{flex:1;color:var(--muted);font-size:14px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:70;padding:12px}
+  .modal .box{background:#fff;border-radius:12px;max-width:820px;width:100%;max-height:94vh;overflow:auto;padding:14px}
+  .modal img,.modal video{max-width:100%;max-height:68vh;display:block;margin:0 auto;border-radius:8px;background:#000}
+  .btns{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap} .btns button{flex:1;min-width:110px}
+  .prog{height:12px;background:#E5E7EB;border-radius:6px;overflow:hidden;margin:12px 0} .prog div{height:100%;background:var(--green);width:0;transition:width .2s}
+  .hint{font-size:13px;color:var(--muted);margin:4px 0 8px}
+  #recT{font-size:28px;font-weight:bold;text-align:center;margin:8px 0;color:var(--red)}
+  @media (max-width:700px){
+    .th{display:none}
+    .it{grid-template-columns:44px 1fr;border-radius:10px;margin-bottom:10px;border-top:1px solid var(--line)}
+    .it .q{grid-column:1 / span 2;border-right:none;border-top:1px solid var(--line)}
+    .it .phc{grid-column:1 / span 2;border-top:1px solid var(--line)}
+    .it .ds{border-right:none}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">WORKMEC QC</h1>
+  <div class="sub" id="who"></div>
+  <button id="backB" class="hidden" onclick="goHome()">◀ Back</button>
+  <button id="loB" class="hidden" onclick="logout()">Log out</button>
+</header>
+<main>
+  <div id="login" class="card">
+    <img src="logo.png" alt="WORKMEC" style="display:block;width:100%;max-width:300px;margin:4px auto 14px">
+    <div style="text-align:center;font-weight:bold;color:var(--blue)">Inspection Reports</div>
+    <input id="pw" type="password" placeholder="Password" autocomplete="off">
+    <button onclick="doLogin()">Login</button>
+  </div>
+
+  <div id="home" class="hidden">
+    <div class="hint">Choose the inspection:</div>
+    <div id="tplList"></div>
+  </div>
+
+  <div id="form" class="hidden">
+    <div class="card hdrf">
+      <div><label>Report</label><div id="fTpl" style="font-weight:bold;margin-top:8px"></div></div>
+      <div><label id="refL">Cage No.</label><input id="fRef" inputmode="text" autocomplete="off" oninput="dirty()"></div>
+      <div><label>Date</label><input id="fDate" type="date" oninput="dirty()"></div>
+    </div>
+    <div class="th"><div>POS.</div><div>DESCRIPTION</div><div>NOMINAL / DETECTED</div><div>PHOTO</div></div>
+    <div id="rows"></div>
+    <div class="card" style="margin-top:10px">
+      <label class="hint">Final notes (optional)</label>
+      <textarea id="fNotes" rows="3" maxlength="1500" style="width:100%" oninput="dirty()"></textarea>
+    </div>
+  </div>
+
+  <div id="done" class="hidden card" style="text-align:center;padding:24px">
+    <div style="font-size:46px">✅</div>
+    <h2 style="margin:6px 0">Report submitted</h2>
+    <div id="dRes" style="font-weight:bold;font-size:18px;margin:8px 0"></div>
+    <div class="btns" style="max-width:520px;margin:16px auto 0">
+      <button class="green" id="dPdf">Open PDF</button>
+      <button class="grey" id="dFol">Open folder</button>
+    </div>
+    <div class="btns" style="max-width:520px;margin:10px auto 0"><button onclick="goHome()">New inspection</button></div>
+  </div>
+</main>
+
+<div class="bar hidden" id="bar"><div class="in"><span id="cnt"></span><button class="grey" onclick="clearForm()">Clear</button><button class="green" onclick="submitR()">Submit report</button></div></div>
+
+<!-- hidden pickers -->
+<input id="camIn" type="file" accept="image/*" capture="environment" class="hidden">
+<input id="galIn" type="file" accept="image/*" multiple class="hidden">
+<input id="vidIn" type="file" accept="video/*" class="hidden">
+
+<!-- photo preview -->
+<div class="modal" id="pvM"><div class="box">
+  <img id="pvImg" alt="">
+  <div class="btns"><button class="red" id="pvDel">🗑 Delete</button><button class="grey" id="pvRe">📷 Retake</button><button onclick="hide('pvM')">Close</button></div>
+</div></div>
+
+<!-- video recorder -->
+<div class="modal" id="vrM"><div class="box">
+  <video id="vrLive" autoplay muted playsinline></video>
+  <div id="recT">0:00 / 0:30</div>
+  <div class="hint" style="text-align:center" id="vrHint">Up to 30 seconds. The video is saved at reduced quality so it uploads quickly.</div>
+  <div class="btns"><button class="red" id="vrGo">● Start</button><button class="grey" id="vrFile">Choose video file</button><button class="grey" onclick="vrClose()">Cancel</button></div>
+</div></div>
+
+<!-- video preview -->
+<div class="modal" id="vpM"><div class="box">
+  <video id="vpV" controls playsinline></video>
+  <div class="btns"><button class="red" id="vpDel">🗑 Delete</button><button class="grey" id="vpRe">● Record again</button><button onclick="hide('vpM')">Close</button></div>
+</div></div>
+
+<!-- confirm / progress -->
+<div class="modal" id="cfM"><div class="box" style="max-width:480px">
+  <h3 id="cfH" style="margin:0 0 8px"></h3><div id="cfB" style="font-size:15px;line-height:1.5"></div>
+  <div class="btns" id="cfBtns"></div>
+</div></div>
+<div class="modal" id="pgM"><div class="box" style="max-width:480px">
+  <h3 style="margin:0 0 6px">Submitting report…</h3>
+  <div id="pgT" class="hint">Starting</div><div class="prog"><div id="pgBar"></div></div>
+  <div class="hint">Keep this screen open until it finishes.</div>
+</div></div>
+
+<div id="msg"></div>
+
+<script>
+const API = 'PASTE_WEB_APP_URL_HERE';   // Apps Script backend (Deploy → Web app → URL ending in /exec)
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sept','Oct','Nov','Dec'];
+let PW = '', NAME = '', TPLS = [], T = null, D = null, OFFSET = 0, tmo;
+
+/* ---------- basics ---------- */
+function toast(t, ok){ const m=$('msg'); m.textContent=t; m.style.background=ok?'#2E7D32':'#C62828'; m.style.display='block'; clearTimeout(tmo); tmo=setTimeout(()=>m.style.display='none', ok?3000:7000); }
+function show(id){ $(id).style.display='flex'; } function hide(id){ $(id).style.display='none'; }
+function api(fn, args){
+  return fetch(API, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ fn, args }) })
+    .then(r => r.json(), () => { throw new Error('No internet / server not reachable'); })
+    .then(r => { if (!r.ok) throw new Error(r.error); return r.data; });
+}
+function confirmBox(h, b, btns){
+  return new Promise(res => {
+    $('cfH').textContent = h; $('cfB').innerHTML = b; $('cfBtns').innerHTML = '';
+    btns.forEach(([label, cls, val]) => { const x = document.createElement('button'); x.textContent = label; x.className = cls; x.onclick = () => { hide('cfM'); res(val); }; $('cfBtns').appendChild(x); });
+    show('cfM');
+  });
+}
+const now = () => new Date(Date.now() + OFFSET);
+function dubai(d){ return new Date(d.getTime() + 4*3600000); }   // UAE = UTC+4
+function isoToday(){ const d = dubai(now()); return d.toISOString().slice(0,10); }
+function stampText(){ const d = dubai(now()), p = n => String(n).padStart(2,'0');
+  return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear() + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()); }
+
+/* ---------- login ---------- */
+function doLogin(auto){
+  const pw = auto ? PW : $('pw').value.trim();
+  if (!pw) return toast('Enter your password');
+  $('login').classList.add('hidden');
+  api('login', [pw]).then(u => {
+    PW = pw; NAME = u.name; try { localStorage.setItem('qcS', pw); } catch(e){}
+    $('who').textContent = u.name; $('loB').classList.remove('hidden'); $('pw').value = '';
+    api('serverNow', []).then(t => OFFSET = t - Date.now()).catch(()=>{});
+    return loadTpls();
+  }).catch(e => { $('login').classList.remove('hidden'); if (auto) { try { localStorage.removeItem('qcS'); } catch(x){} } toast(e.message); });
+}
+function logout(){ try { localStorage.removeItem('qcS'); } catch(e){} location.reload(); }
+$('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+(function(){ let s = null; try { s = localStorage.getItem('qcS'); } catch(e){} if (s) { PW = s; doLogin(true); } })();
+
+function loadTpls(){
+  return api('getTemplates', [PW]).then(t => { TPLS = t; renderHome(); });
+}
+async function renderHome(){
+  const drafts = await dbKeys();
+  $('tplList').innerHTML = TPLS.length ? TPLS.map((t,i) => '<button class="tpl" onclick="openTpl(' + i + ')">' + esc(t.name) +
+    '<small>' + t.items.length + ' items' + (drafts.indexOf(t.id) >= 0 ? ' · <b>draft saved</b>' : '') + '</small></button>').join('')
+    : '<div class="card">No active inspections. Add one in the TEMPLATES tab of the WORKMEC QC sheet.</div>';
+  goHome(true);
+}
+function goHome(noReload){
+  ['form','done','login'].forEach(i => $(i).classList.add('hidden')); $('bar').classList.add('hidden');
+  $('home').classList.remove('hidden'); $('backB').classList.add('hidden'); $('title').textContent = 'WORKMEC QC';
+  T = null; D = null; window.scrollTo(0,0);
+  if (noReload !== true) renderHome();
+}
+
+/* ---------- form ---------- */
+async function openTpl(i){
+  T = TPLS[i];
+  const saved = await dbGet(T.id);
+  D = { ref:'', date: isoToday(), notes:'', items:{} };
+  if (saved) {
+    const a = await confirmBox('Saved draft found', 'There is an unfinished ' + esc(T.name) + ' report' + (saved.ref ? ' for ' + esc(T.refLabel) + ' <b>' + esc(saved.ref) + '</b>' : '') + '.', [['Start new','grey','new'],['Continue draft','green','go']]);
+    if (a === 'go') D = saved; else await dbDel(T.id);
+  }
+  T.items.forEach(it => { D.items[it.pos] = D.items[it.pos] || { value:'', photos:[], video:null }; });
+  $('home').classList.add('hidden'); $('form').classList.remove('hidden'); $('bar').classList.remove('hidden'); $('backB').classList.remove('hidden');
+  $('title').textContent = T.name; $('fTpl').textContent = T.name; $('refL').textContent = T.refLabel;
+  $('fRef').value = D.ref; $('fDate').value = D.date; $('fNotes').value = D.notes;
+  $('rows').innerHTML = T.items.map(rowHtml).join('');
+  T.items.forEach(it => { drawPh(it.pos); paintRes(it.pos); });
+  count(); window.scrollTo(0,0);
+}
+function rowHtml(it){
+  const p = esc(it.pos), v = D.items[it.pos].value;
+  let det;
+  if (it.type === 'OKNG') det = '<div class="okng"><button class="ok" onclick="setOk(\'' + p + '\',\'OK\')">OK</button><button class="ng" onclick="setOk(\'' + p + '\',\'NG\')">NG</button></div>';
+  else if (it.type === 'DATE') det = '<input type="date" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
+  else if (it.type === 'NUMBER') det = '<input inputmode="decimal" placeholder="type value" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
+  else det = '<input placeholder="' + (it.type === 'VIDEO' ? 'value (optional)' : 'type here') + '" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
+  const tol = it.type === 'NUMBER' && (it.min !== '' || it.max !== '') ? 'min ' + (it.min || '–') + ' · max ' + (it.max || '–') : '';
+  return '<div class="it" id="r_' + p + '"><div class="pos">' + p + '</div><div class="ds">' + esc(it.desc) + '</div>' +
+    '<div class="q"><div class="nom"><small>NOMINAL</small>' + esc(it.nominal || '–') + (tol ? '<small>' + tol + '</small>' : '') + '</div>' +
+    '<div class="det" id="d_' + p + '"><small>DETECTED</small>' + det + '<div class="res" id="s_' + p + '"></div></div></div>' +
+    '<div class="phc"><div class="ph" id="p_' + p + '"></div></div></div>';
+}
+function setV(pos, v){ D.items[pos].value = v; paintRes(pos); dirty(); }
+function setOk(pos, v){ D.items[pos].value = D.items[pos].value === v ? '' : v; paintRes(pos); dirty(); }
+function itemOf(pos){ return T.items.find(i => i.pos === pos); }
+function num(v){ const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? null : n; }
+function check(it, v){
+  v = String(v || '').trim();
+  if (it.type === 'OKNG') return v === 'NG' ? 'NG' : v ? 'OK' : '';
+  if (it.type !== 'NUMBER') return '';
+  const n = num(v); if (n === null) return '';
+  const mn = num(it.min), mx = num(it.max);
+  return (mn !== null && n < mn) || (mx !== null && n > mx) ? 'NG' : 'OK';
+}
+function paintRes(pos){
+  const it = itemOf(pos), v = D.items[pos].value, r = check(it, v), d = $('d_' + pos);
+  d.classList.toggle('ok', r === 'OK'); d.classList.toggle('ng', r === 'NG');
+  $('s_' + pos).textContent = r === 'NG' ? '✗ OUT OF TOLERANCE' : r === 'OK' && it.type === 'NUMBER' ? '✓ OK' : '';
+  if (it.type === 'OKNG') d.querySelectorAll('.okng button').forEach(b => b.classList.toggle('on', b.textContent === v));
+  count();
+}
+function missing(){
+  return T.items.filter(it => {
+    const a = D.items[it.pos];
+    const noVal = it.type !== 'VIDEO' && !String(a.value || '').trim();
+    const noPh = it.photo === 'REQUIRED' && !a.photos.length;
+    const noVid = it.type === 'VIDEO' && !a.video;
+    return noVal || noPh || noVid;
+  });
+}
+function count(){
+  if (!T) return;
+  const m = missing(), ng = T.items.filter(it => check(it, D.items[it.pos].value) === 'NG').length;
+  T.items.forEach(it => { const r = $('r_' + it.pos); if (r) r.classList.toggle('miss', m.indexOf(it) >= 0); });
+  $('cnt').innerHTML = (T.items.length - m.length) + ' / ' + T.items.length + ' done' + (ng ? ' · <b style="color:#C62828">' + ng + ' NG</b>' : '');
+}
+
+/* ---------- photos ---------- */
+let PH_POS = null, PH_REPLACE = -1;
+function drawPh(pos){
+  const it = itemOf(pos), a = D.items[pos], p = esc(pos);
+  let h = a.photos.map((b, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')"><img src="' + url(b) + '"><span>' + (i+1) + '</span></div>').join('');
+  if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')"><video src="' + url(a.video) + '#t=0.5" muted playsinline></video><span>▶ video</span></div>'
+                                       : '<div class="addb" onclick="vrOpen(\'' + p + '\')"><b>🎥</b>Record video</div>';
+  if (it.photo !== 'NONE') h += '<div class="addb" onclick="cam(\'' + p + '\',-1)"><b>📷</b>Camera</div><div class="addb" onclick="gal(\'' + p + '\')"><b>🖼</b>Gallery</div>';
+  $('p_' + pos).innerHTML = h;
+}
+const URLS = new WeakMap();
+function url(b){ if (!URLS.has(b)) URLS.set(b, URL.createObjectURL(b)); return URLS.get(b); }
+function cam(pos, replace){ PH_POS = pos; PH_REPLACE = replace; $('camIn').value = ''; $('camIn').click(); }
+function gal(pos){ PH_POS = pos; PH_REPLACE = -1; $('galIn').value = ''; $('galIn').click(); }
+$('camIn').onchange = e => addPhotos(e.target.files);
+$('galIn').onchange = e => addPhotos(e.target.files);
+async function addPhotos(files){
+  if (!files || !files.length || !D) return;
+  const pos = PH_POS, a = D.items[pos];
+  for (const f of files) {
+    try {
+      const b = await shrink(f);
+      if (PH_REPLACE >= 0) { a.photos[PH_REPLACE] = b; PH_REPLACE = -1; } else a.photos.push(b);
+    } catch (e) { toast('Could not read photo: ' + e.message); }
+  }
+  drawPh(pos); count(); dirty();
+}
+// resize to max 1600 px, stamp date/time bottom-right (like the camera stamp in the reports), JPEG
+async function shrink(file){
+  let src;
+  try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('not an image')); i.src = URL.createObjectURL(file); }); }
+  const W0 = src.width, H0 = src.height, k = Math.min(1, 1600 / Math.max(W0, H0));
+  const W = Math.round(W0 * k), H = Math.round(H0 * k), c = document.createElement('canvas');
+  c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(src, 0, 0, W, H);
+  const fs = Math.max(16, Math.round(Math.min(W, H) * 0.04)), txt = stampText();
+  g.font = 'bold ' + fs + 'px Arial'; g.textAlign = 'right'; g.textBaseline = 'bottom';
+  g.lineWidth = Math.max(3, fs / 6); g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, W - fs*0.6, H - fs*0.5);
+  g.fillStyle = '#FFB300'; g.fillText(txt, W - fs*0.6, H - fs*0.5);
+  return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.78));
+}
+function pv(pos, i){
+  $('pvImg').src = url(D.items[pos].photos[i]); show('pvM');
+  $('pvDel').onclick = () => { D.items[pos].photos.splice(i, 1); hide('pvM'); drawPh(pos); count(); dirty(); };
+  $('pvRe').onclick = () => { hide('pvM'); cam(pos, i); };
+}
+
+/* ---------- video (in-app recorder, 720p, max 30 s, ~2 Mbps ≈ 8 MB) ---------- */
+let VR = { pos:null, stream:null, rec:null, chunks:[], t0:0, iv:null };
+async function vrOpen(pos){
+  VR.pos = pos; $('vrGo').textContent = '● Start'; $('vrGo').disabled = false; $('recT').textContent = '0:00 / 0:30'; show('vrM');
+  try {
+    VR.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    $('vrLive').srcObject = VR.stream;
+  } catch (e) { $('vrHint').textContent = 'Camera not available here (' + e.message + '). Use "Choose video file" instead.'; $('vrGo').disabled = true; }
+}
+$('vrGo').onclick = () => { if (VR.rec && VR.rec.state === 'recording') VR.rec.stop(); else vrStart(); };
+function vrStart(){
+  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm'];
+  const mime = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+  VR.chunks = [];
+  VR.rec = new MediaRecorder(VR.stream, mime ? { mimeType: mime, videoBitsPerSecond: 2000000 } : { videoBitsPerSecond: 2000000 });
+  VR.rec.ondataavailable = e => { if (e.data.size) VR.chunks.push(e.data); };
+  VR.rec.onstop = () => {
+    clearInterval(VR.iv);
+    const b = new Blob(VR.chunks, { type: (VR.rec.mimeType || 'video/webm').split(';')[0] });
+    D.items[VR.pos].video = b; vrClose(); drawPh(VR.pos); count(); dirty();
+    toast('Video saved (' + (b.size / 1048576).toFixed(1) + ' MB)', true);
+  };
+  VR.rec.start(1000); VR.t0 = Date.now(); $('vrGo').textContent = '■ Stop';
+  VR.iv = setInterval(() => { const s = Math.floor((Date.now() - VR.t0) / 1000); $('recT').textContent = '0:' + String(s).padStart(2,'0') + ' / 0:30'; if (s >= 30) VR.rec.stop(); }, 250);
+}
+function vrClose(){ clearInterval(VR.iv); if (VR.stream) VR.stream.getTracks().forEach(t => t.stop()); VR.stream = null; $('vrLive').srcObject = null; hide('vrM'); }
+$('vrFile').onclick = () => { $('vidIn').value = ''; $('vidIn').click(); };
+$('vidIn').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (f.size > 30 * 1048576) return toast('Video is ' + (f.size/1048576).toFixed(0) + ' MB – too big (max 30 MB). Record a shorter one with the in-app recorder.');
+  D.items[VR.pos].video = f; vrClose(); drawPh(VR.pos); count(); dirty();
+};
+function vp(pos){
+  $('vpV').src = url(D.items[pos].video); show('vpM');
+  $('vpDel').onclick = () => { D.items[pos].video = null; $('vpV').pause(); hide('vpM'); drawPh(pos); count(); dirty(); };
+  $('vpRe').onclick = () => { $('vpV').pause(); hide('vpM'); vrOpen(pos); };
+}
+
+/* ---------- draft (kept on the tablet until submitted) ---------- */
+let DB;
+function db(){ return DB || (DB = new Promise((res, rej) => { const r = indexedDB.open('wmqc', 1); r.onupgradeneeded = () => r.result.createObjectStore('drafts'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); }
+function tx(mode, f){ return db().then(d => new Promise((res, rej) => { const t = d.transaction('drafts', mode), q = f(t.objectStore('drafts')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); })).catch(() => null); }
+const dbGet = k => tx('readonly', s => s.get(k));
+const dbPut = (k, v) => tx('readwrite', s => s.put(v, k));
+const dbDel = k => tx('readwrite', s => s.delete(k));
+const dbKeys = () => tx('readonly', s => s.getAllKeys()).then(r => r || []);
+let dt;
+function dirty(){
+  if (!D) return;
+  D.ref = $('fRef').value.trim(); D.date = $('fDate').value; D.notes = $('fNotes').value;
+  clearTimeout(dt); const id = T.id, snap = D; dt = setTimeout(() => dbPut(id, snap), 600);
+}
+async function clearForm(){
+  if (await confirmBox('Clear this report?', 'All values, photos and the video on this screen will be removed.', [['Cancel','grey',0],['Clear','red',1]])) {
+    await dbDel(T.id); const i = TPLS.indexOf(T); D = null; openTpl(i);
+  }
+}
+
+/* ---------- submit: start → upload photos/video one by one → build PDF ---------- */
+function b64(blob){ return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
+async function retry(f, n){ for (let i = 0; ; i++) { try { return await f(); } catch (e) { if (i >= (n || 2) || /expired|password/i.test(e.message)) throw e; await new Promise(r => setTimeout(r, 1500 * (i + 1))); } } }
+function pg(t, f){ $('pgT').textContent = t; $('pgBar').style.width = Math.round(f * 100) + '%'; }
+async function submitR(){
+  dirty();
+  if (!D.ref) { $('fRef').focus(); return toast('Enter ' + T.refLabel); }
+  const m = missing();
+  if (m.length) {
+    const go = await confirmBox(m.length + ' item(s) not complete', 'Not filled: <b>' + m.map(i => esc(i.pos)).join(', ') + '</b> (marked in orange).<br>Submit anyway?', [['Go back','grey',0],['Submit anyway','red',1]]);
+    if (!go) return;
+  }
+  const ng = T.items.filter(it => check(it, D.items[it.pos].value) === 'NG');
+  if (ng.length && !await confirmBox('Out of tolerance', 'Item(s) <b>' + ng.map(i => esc(i.pos)).join(', ') + '</b> are NG. The report will show NEGATIVE RESULT.', [['Go back','grey',0],['Submit','red',1]])) return;
+
+  const files = [];
+  T.items.forEach(it => { const a = D.items[it.pos];
+    a.photos.forEach((b, i) => files.push({ pos: it.pos, kind: 'photo', blob: b, name: 'Pos ' + it.pos + ' - ' + (i+1) + '.jpg' }));
+    if (a.video) files.push({ pos: it.pos, kind: 'video', blob: a.video, name: 'Pos ' + it.pos + ' - video.' + (/mp4/.test(a.video.type) ? 'mp4' : /quicktime/.test(a.video.type) ? 'mov' : 'webm') });
+  });
+  show('pgM'); pg('Creating report folder…', 0.02);
+  try {
+    let st;
+    try { st = await api('startReport', [PW, T.id, D.ref, false]); }
+    catch (e) {
+      if (e.message !== 'DUPLICATE') throw e;
+      hide('pgM');
+      if (!await confirmBox('Already submitted', T.refLabel + ' <b>' + esc(D.ref) + '</b> already has a ' + esc(T.name) + ' report. Make another one?', [['Cancel','grey',0],['Yes, new report','red',1]])) return;
+      show('pgM'); st = await api('startReport', [PW, T.id, D.ref, true]);
+    }
+    const out = {};
+    T.items.forEach(it => out[it.pos] = { value: D.items[it.pos].value, photos: [], video: '' });
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      pg('Uploading ' + (f.kind === 'video' ? 'video' : 'photo') + ' ' + (i+1) + ' of ' + files.length + '…', 0.05 + 0.75 * i / Math.max(files.length, 1));
+      const data = await b64(f.blob);
+      const id = await retry(() => api('uploadFile', [PW, st.rid, f.name, f.blob.type || 'application/octet-stream', data]));
+      if (f.kind === 'video') out[f.pos].video = id; else out[f.pos].photos.push(id);
+    }
+    pg('Making the PDF report…', 0.85);
+    const dd = D.date.split('-');
+    const r = await retry(() => api('finishReport', [PW, st.rid, { ref: D.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: D.notes, items: out }]), 1);
+    pg('Done', 1);
+    await dbDel(T.id);
+    hide('pgM'); showDone(r);
+  } catch (e) {
+    hide('pgM');
+    confirmBox('Not submitted', esc(e.message) + '<br><br>Nothing is lost – the report is still saved on this tablet. Check the internet and press Submit again.', [['OK','pri',0]]);
+  }
+}
+function showDone(r){
+  $('form').classList.add('hidden'); $('bar').classList.add('hidden'); $('done').classList.remove('hidden'); $('backB').classList.add('hidden');
+  $('dRes').textContent = r.result; $('dRes').style.color = r.ng ? '#C62828' : '#2E7D32';
+  $('dPdf').onclick = () => window.open(r.pdf, '_blank'); $('dFol').onclick = () => window.open(r.folder, '_blank');
+  window.scrollTo(0,0);
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
