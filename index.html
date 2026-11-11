@@ -97,6 +97,7 @@
       <div><label id="refL">Cage No.</label><input id="fRef" inputmode="text" autocomplete="off" oninput="dirty()"></div>
       <div><label>Date</label><input id="fDate" type="date" oninput="dirty()"></div>
     </div>
+    <div class="card hidden" id="drwC"><div class="hint" style="margin:0 0 6px">DRAWING – tap to enlarge</div><img id="drwImg" alt="Drawing" style="display:block;width:100%;max-height:340px;object-fit:contain;cursor:zoom-in" onclick="show('drM')"></div>
     <div class="th"><div>POS.</div><div>DESCRIPTION</div><div>NOMINAL / DETECTED</div><div>PHOTO</div></div>
     <div id="rows"></div>
     <div class="card" style="margin-top:10px">
@@ -129,6 +130,9 @@
   <img id="pvImg" alt="">
   <div class="btns"><button class="red" id="pvDel">🗑 Delete</button><button class="grey" id="pvRe">📷 Retake</button><button onclick="hide('pvM')">Close</button></div>
 </div></div>
+
+<!-- drawing full size -->
+<div class="modal" id="drM" onclick="hide('drM')"><div class="box" style="max-width:1100px"><img id="drBig" alt="Drawing" style="max-height:88vh;width:auto;max-width:100%"></div></div>
 
 <!-- video recorder -->
 <div class="modal" id="vrM"><div class="box">
@@ -233,7 +237,7 @@ async function openTpl(i){
   $('fRef').value = D.ref; $('fDate').value = D.date; $('fNotes').value = D.notes;
   $('rows').innerHTML = T.items.map(rowHtml).join('');
   T.items.forEach(it => { drawPh(it.pos); paintRes(it.pos); });
-  count(); window.scrollTo(0,0);
+  count(); window.scrollTo(0,0); loadDrawing();
 }
 function rowHtml(it){
   const p = esc(it.pos), v = D.items[it.pos].value;
@@ -247,6 +251,13 @@ function rowHtml(it){
     '<div class="q"><div class="nom"><small>NOMINAL</small>' + esc(it.nominal || '–') + (tol ? '<small>' + tol + '</small>' : '') + '</div>' +
     '<div class="det" id="d_' + p + '"><small>DETECTED</small>' + det + '<div class="res" id="s_' + p + '"></div></div></div>' +
     '<div class="phc"><div class="ph" id="p_' + p + '"></div></div></div>';
+}
+const DRW = {};
+function loadDrawing(){
+  const id = T.id; $('drwC').classList.add('hidden');
+  const showIt = d => { if (!T || T.id !== id || !d) return; $('drwImg').src = d; $('drBig').src = d; $('drwC').classList.remove('hidden'); };
+  if (DRW[id] !== undefined) return showIt(DRW[id]);
+  api('getDrawing', [PW, id]).then(r => { DRW[id] = r ? 'data:' + r.mime + ';base64,' + r.b64 : null; showIt(DRW[id]); }).catch(() => {});
 }
 function setV(pos, v){ D.items[pos].value = v; paintRes(pos); dirty(); }
 function setOk(pos, v){ D.items[pos].value = D.items[pos].value === v ? '' : v; paintRes(pos); dirty(); }
