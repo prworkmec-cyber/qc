@@ -53,6 +53,8 @@
   .addb{width:104px;height:104px;border-radius:6px;border:2px dashed #9CA3AF;background:#F9FAFB;color:#374151;font-size:13px;font-weight:bold;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:4px;text-align:center}
   .addb b{font-size:26px}
   .it.miss{box-shadow:inset 4px 0 0 var(--amber)}
+  .addb small{font-weight:normal;font-size:11px;color:var(--muted)}
+  .phc.drop{background:#E8F1FB;outline:3px dashed var(--blue);outline-offset:-6px}
   .bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);box-shadow:0 -4px 12px rgba(0,0,0,.08);padding:10px 16px calc(10px + env(safe-area-inset-bottom));z-index:30}
   .bar .in{max-width:1100px;margin:0 auto;display:flex;gap:10px;align-items:center} .bar .in span{flex:1;color:var(--muted);font-size:14px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:70;padding:12px}
@@ -301,13 +303,28 @@ function drawPh(pos){
   let h = a.photos.map((b, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')"><img src="' + url(b) + '"><span>' + (i+1) + '</span></div>').join('');
   if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')"><video src="' + url(a.video) + '#t=0.5" muted playsinline></video><span>▶ video</span></div>'
                                        : '<div class="addb" onclick="vrOpen(\'' + p + '\')"><b>🎥</b>Record video</div>';
-  if (it.photo !== 'NONE') h += '<div class="addb" onclick="gal(\'' + p + '\')"><b>📷</b>Add photo</div>';   // phone asks: Camera or Gallery
+  if (it.photo !== 'NONE') h += '<div class="addb" onclick="gal(\'' + p + '\')"><b>📷</b>Add photo<small>or drop here</small></div>';   // phone asks: Camera or Gallery; computer: drag & drop
   $('p_' + pos).innerHTML = h;
 }
 const URLS = new WeakMap();
 function url(b){ if (!URLS.has(b)) URLS.set(b, URL.createObjectURL(b)); return URLS.get(b); }
 function cam(pos, replace){ PH_POS = pos; PH_REPLACE = replace; $('camIn').value = ''; $('camIn').click(); }
 function gal(pos){ PH_POS = pos; PH_REPLACE = -1; $('galIn').value = ''; $('galIn').click(); }
+/* drag & drop photos (or the welding video) onto a row's photo cell */
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));   // never open a dropped file in the browser
+$('rows').addEventListener('dragover', e => { const c = e.target.closest('.phc'); if (!c) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; c.classList.add('drop'); });
+$('rows').addEventListener('dragleave', e => { const c = e.target.closest('.phc'); if (c && !c.contains(e.relatedTarget)) c.classList.remove('drop'); });
+$('rows').addEventListener('drop', e => {
+  const c = e.target.closest('.phc'); if (!c || !D) return; e.preventDefault(); c.classList.remove('drop');
+  const pos = c.querySelector('.ph').id.slice(2), it = itemOf(pos), fs = Array.from(e.dataTransfer.files || []);
+  const imgs = fs.filter(f => /^image\//.test(f.type)), vid = fs.find(f => /^video\//.test(f.type));
+  if (vid && it.type === 'VIDEO') {
+    if (vid.size > 30 * 1048576) toast('Video is ' + (vid.size / 1048576).toFixed(0) + ' MB – too big (max 30 MB)');
+    else { D.items[pos].video = vid; drawPh(pos); count(); dirty(); }
+  }
+  if (imgs.length && it.photo !== 'NONE') { PH_POS = pos; PH_REPLACE = -1; addPhotos(imgs); }
+  else if (!vid || it.type !== 'VIDEO') toast('Drop photos (JPG / PNG)' + (it.type === 'VIDEO' ? ' or a video' : '') + ' here');
+});
 $('camIn').onchange = e => addPhotos(e.target.files);
 $('galIn').onchange = e => addPhotos(e.target.files);
 async function addPhotos(files){
