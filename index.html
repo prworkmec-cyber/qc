@@ -56,6 +56,10 @@
   .ph .t span{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px}
   .addb{width:104px;height:104px;border-radius:6px;border:2px dashed #9CA3AF;background:#F9FAFB;color:#374151;font-size:13px;font-weight:bold;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:4px;text-align:center}
   .addb b{font-size:26px}
+  .it .pos{flex-direction:column;gap:6px}
+  .rb{display:flex;flex-direction:column;gap:4px} .rb button{background:#E5E7EB;color:#374151;padding:3px 0;width:30px;font-size:14px;border-radius:6px}
+  .rb button.x{color:#C62828}
+  #reM label{display:block;font-size:13px;color:var(--muted);margin-top:8px} #reM input,#reM select{width:100%;margin-top:3px}
   .it.miss{box-shadow:inset 4px 0 0 var(--amber)}
   .addb small{font-weight:normal;font-size:11px;color:var(--muted)}
   .phc.drop{background:#E8F1FB;outline:3px dashed var(--blue);outline-offset:-6px}
@@ -108,6 +112,7 @@
     <div class="card hidden" id="drwC"><div class="hint" style="margin:0 0 6px">DRAWING – tap to enlarge</div><img id="drwImg" alt="Drawing" style="display:block;width:100%;max-height:340px;object-fit:contain;cursor:zoom-in" onclick="show('drM')"></div>
     <div class="th"><div>POS.</div><div>DESCRIPTION</div><div>NOMINAL / DETECTED</div><div>PHOTO</div></div>
     <div id="rows"></div>
+    <button class="grey" style="margin-top:8px" onclick="rowAdd('')">＋ Add row at the end</button>
     <div class="card" style="margin-top:10px">
       <label class="hint">Final notes (optional)</label>
       <textarea id="fNotes" rows="3" maxlength="1500" style="width:100%" oninput="dirty()"></textarea>
@@ -165,6 +170,20 @@
   <h3 style="margin:0 0 6px">Submitting report…</h3>
   <div id="pgT" class="hint">Starting</div><div class="prog"><div id="pgBar"></div></div>
   <div class="hint">Keep this screen open until it finishes.</div>
+</div></div>
+
+<!-- add / edit an inspection row (applies to all future reports) -->
+<div class="modal" id="reM"><div class="box" style="max-width:460px">
+  <h3 id="reH" style="margin:0 0 4px">Add row</h3>
+  <div class="hint">Saved in the template: every future report gets this change, and the Top/Bottom tab is updated.</div>
+  <label>Description<input id="reD" maxlength="120" placeholder="e.g. FULL LENGTH PICTURE"></label>
+  <label>Type<select id="reT" onchange="reType()">
+    <option value="NUMBER">Measurement (number with tolerance)</option><option value="OKNG">OK / NG</option>
+    <option value="PHOTO">Photo only</option><option value="TEXT">Text</option><option value="DATE">Date</option><option value="VIDEO">Video</option></select></label>
+  <label>Nominal (shown in the report)<input id="reN" maxlength="60" placeholder="e.g. 2980 ±5"></label>
+  <div id="reMM" style="display:flex;gap:8px"><label style="flex:1">Min<input id="reMin" inputmode="decimal"></label><label style="flex:1">Max<input id="reMax" inputmode="decimal"></label></div>
+  <label>Photo<select id="reP"><option value="OPTIONAL">Optional</option><option value="REQUIRED">Required</option><option value="NONE">No photo</option></select></label>
+  <div class="btns"><button class="grey" onclick="hide('reM')">Cancel</button><button class="green" id="reS">Save</button></div>
 </div></div>
 
 <!-- reports being sent in the background -->
@@ -267,14 +286,43 @@ function rowHtml(it){
   const p = esc(it.pos), v = D.items[it.pos].value;
   let det;
   if (it.type === 'OKNG') det = '<div class="okng"><button class="ok" onclick="setOk(\'' + p + '\',\'OK\')">OK</button><button class="ng" onclick="setOk(\'' + p + '\',\'NG\')">NG</button></div>';
+  else if (it.type === 'PHOTO') det = '<div class="hint" style="margin:0;text-align:center">Photo only – add photos →</div>';
   else if (it.type === 'DATE') det = '<input type="date" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
   else if (it.type === 'NUMBER') det = '<input inputmode="decimal" placeholder="type value" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
   else det = '<input placeholder="' + (it.type === 'VIDEO' ? 'value (optional)' : 'type here') + '" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
   const tol = it.type === 'NUMBER' && (it.min !== '' || it.max !== '') ? 'min ' + (it.min || '–') + ' · max ' + (it.max || '–') : '';
-  return '<div class="it" id="r_' + p + '"><div class="pos">' + p + '</div><div class="ds">' + esc(it.desc) + '</div>' +
+  return '<div class="it" id="r_' + p + '"><div class="pos">' + esc(it.no || it.pos) +
+    '<div class="rb"><button title="Add a row below" onclick="rowAdd(\'' + p + '\')">＋</button><button title="Edit this row" onclick="rowEdit(\'' + p + '\')">✎</button><button class="x" title="Remove this row" onclick="rowDel(\'' + p + '\')">✕</button></div></div><div class="ds">' + esc(it.desc) + '</div>' +
     '<div class="q"><div class="nom"><small>NOMINAL</small>' + esc(it.nominal || '–') + (tol ? '<small>' + tol + '</small>' : '') + '</div>' +
     '<div class="det" id="d_' + p + '"><small>DETECTED</small>' + det + '<div class="res" id="s_' + p + '"></div></div></div>' +
     '<div class="phc"><div class="ph" id="p_' + p + '"></div></div></div>';
+}
+/* ---------- add / edit / remove rows (permanent: changes the template for all future reports) ---------- */
+function reType(){ const ty = $('reT').value; $('reMM').style.display = ty === 'NUMBER' ? 'flex' : 'none'; if (ty === 'PHOTO' && $('reP').value === 'NONE') $('reP').value = 'OPTIONAL'; }
+function rowForm(title, it, onSave){
+  $('reH').textContent = title; $('reD').value = it ? it.desc : ''; $('reT').value = it ? it.type : 'PHOTO'; $('reN').value = it ? it.nominal : '';
+  $('reMin').value = it ? it.min : ''; $('reMax').value = it ? it.max : ''; $('reP').value = it ? it.photo : 'OPTIONAL'; reType();
+  $('reS').onclick = async () => {
+    const f = { desc: $('reD').value.trim(), type: $('reT').value, nominal: $('reN').value.trim(), min: $('reMin').value.trim(), max: $('reMax').value.trim(), photo: $('reP').value };
+    if (!f.desc) return toast('Enter a description');
+    if (f.type !== 'NUMBER') { f.min = ''; f.max = ''; }
+    hide('reM'); await onSave(f);
+  };
+  show('reM'); setTimeout(() => $('reD').focus(), 50);
+}
+async function rowsChanged(call, msg){
+  show('pgM'); pg(msg, 0.5);
+  try { const items = await api(call[0], call[1]); T.items = items; dirty(); hide('pgM'); const y = window.scrollY; renderForm(); window.scrollTo(0, y); return true; }
+  catch (e) { hide('pgM'); toast(e.message); return false; }
+}
+function rowAdd(after){ rowForm('Add row' + (after ? ' below ' + (itemOf(after).no || after) : ''), null, f => rowsChanged(['saveItem', [PW, T.id, '', after, f]], 'Adding row…')); }
+function rowEdit(key){ const it = itemOf(key); rowForm('Edit row ' + (it.no || key), it, f => rowsChanged(['saveItem', [PW, T.id, key, '', f]], 'Saving row…')); }
+async function rowDel(key){
+  const it = itemOf(key);
+  if (!await confirmBox('Remove row ' + esc(it.no || key) + '?', '<b>' + esc(it.desc) + '</b> will be removed from this and all future ' + esc(T.name) + ' reports, and its row is deleted from the ' + esc(T.name) + ' tab. ' +
+    'Values of earlier cages in that row stay in their PDFs and in the LOG.', [['Cancel','grey',0],['Remove','red',1]])) return;
+  const a = D.items[key];
+  if (await rowsChanged(['removeItem', [PW, T.id, key]], 'Removing row…') && a) { a.photos.forEach(gone); gone(a.video); delete D.items[key]; dirty(); }
 }
 const DRW = {};
 function loadDrawing(){
@@ -305,8 +353,8 @@ function paintRes(pos){
 function missing(){
   return T.items.filter(it => {
     const a = D.items[it.pos];
-    const noVal = it.type !== 'VIDEO' && !String(a.value || '').trim();
-    const noPh = it.photo === 'REQUIRED' && !a.photos.length;
+    const noVal = it.type !== 'VIDEO' && it.type !== 'PHOTO' && !String(a.value || '').trim();
+    const noPh = (it.photo === 'REQUIRED' || it.type === 'PHOTO') && !a.photos.length;
     const noVid = it.type === 'VIDEO' && !a.video;
     return noVal || noPh || noVid;
   });
