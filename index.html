@@ -52,6 +52,7 @@
   .ph .t i{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-style:normal;padding:1px 5px;border-radius:4px}
   .ph .t i.up{background:#2E7D32}
   .ph .t em{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-style:normal;text-align:center}
+  .obi{border:1px solid var(--line);border-radius:8px;padding:10px;margin:8px 0;font-size:14px} .obi b{font-size:15px} .obi .btns{margin-top:8px}
   .ph .t span{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px}
   .addb{width:104px;height:104px;border-radius:6px;border:2px dashed #9CA3AF;background:#F9FAFB;color:#374151;font-size:13px;font-weight:bold;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:4px;text-align:center}
   .addb b{font-size:26px}
@@ -81,6 +82,7 @@
   <h1 id="title">WORKMEC QC</h1>
   <div class="sub" id="who"></div>
   <button id="backB" class="hidden" onclick="goHome()">◀ Back</button>
+  <button id="obB" class="hidden" onclick="obShow()" title="Submission status">📤 <span id="obN">Status</span></button>
   <button id="loB" class="hidden" onclick="logout()">Log out</button>
 </header>
 <main>
@@ -165,6 +167,14 @@
   <div class="hint">Keep this screen open until it finishes.</div>
 </div></div>
 
+<!-- reports being sent in the background -->
+<div class="modal" id="obM"><div class="box" style="max-width:560px">
+  <h3 style="margin:0 0 6px">Submission status</h3>
+  <div class="hint">They are sent in the background – keep the app open (any screen). If it is closed, sending continues the next time it is opened.</div>
+  <div id="obL"></div>
+  <div class="btns"><button onclick="hide('obM')">Close</button></div>
+</div></div>
+
 <div id="msg"></div>
 
 <script>
@@ -204,6 +214,7 @@ function doLogin(auto){
     PW = pw; NAME = u.name; try { localStorage.setItem('qcS', pw); } catch(e){}
     $('who').textContent = u.name; $('loB').classList.remove('hidden'); $('pw').value = '';
     api('serverNow', []).then(t => OFFSET = t - Date.now()).catch(()=>{});
+    $('obB').classList.remove('hidden'); sendQ();
     return loadTpls();
   }).catch(e => { $('login').classList.remove('hidden'); if (auto) { try { localStorage.removeItem('qcS'); } catch(x){} } toast(e.message); });
 }
@@ -341,16 +352,18 @@ $('rows').addEventListener('drop', e => {
 });
 $('camIn').onchange = e => addPhotos(e.target.files);
 $('galIn').onchange = e => addPhotos(e.target.files);
+let PROC = 0;   // photos still being resized/stamped
 async function addPhotos(files){
   if (!files || !files.length || !D) return;
   const pos = PH_POS, a = D.items[pos];
-  for (const f of files) {
+  PROC++;
+  try { for (const f of files) {
     try {
       const b = await shrink(f);
       if (PH_REPLACE >= 0) { gone(a.photos[PH_REPLACE]); a.photos[PH_REPLACE] = { b: b, id: null }; PH_REPLACE = -1; } else a.photos.push({ b: b, id: null });
     } catch (e) { toast('Could not read photo: ' + e.message); }
-  }
-  drawPh(pos); count(); dirty(); pump();
+  } } finally { PROC--; }
+  if (D && D.items[pos] === a) { drawPh(pos); count(); dirty(); pump(); }
 }
 // resize to max 1600 px, stamp date/time bottom-right (like the camera stamp in the reports), JPEG
 async function shrink(file){
@@ -422,8 +435,13 @@ async function vp(pos){
 
 /* ---------- draft (kept on the tablet until submitted) ---------- */
 let DB;
-function db(){ return DB || (DB = new Promise((res, rej) => { const r = indexedDB.open('wmqc', 1); r.onupgradeneeded = () => r.result.createObjectStore('drafts'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); }
-function tx(mode, f){ return db().then(d => new Promise((res, rej) => { const t = d.transaction('drafts', mode), q = f(t.objectStore('drafts')); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); })).catch(() => null); }
+function db(){ return DB || (DB = new Promise((res, rej) => { const r = indexedDB.open('wmqc', 2);
+  r.onupgradeneeded = () => { const x = r.result; ['drafts', 'outbox'].forEach(n => { if (!x.objectStoreNames.contains(n)) x.createObjectStore(n); }); };
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); }
+function tx(mode, f, st){ st = st || 'drafts'; return db().then(d => new Promise((res, rej) => { const t = d.transaction(st, mode), q = f(t.objectStore(st)); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); })).catch(() => null); }
+const obAll = () => tx('readonly', s => s.getAll(), 'outbox').then(r => r || []);
+const obPut = v => tx('readwrite', s => s.put(v, v.qid), 'outbox');
+const obDel = k => tx('readwrite', s => s.delete(k), 'outbox');
 const dbGet = k => tx('readonly', s => s.get(k));
 const dbPut = (k, v) => tx('readwrite', s => s.put(v, k));
 const dbDel = k => tx('readwrite', s => s.delete(k));
@@ -538,7 +556,7 @@ function gone(e){ if (e && e.id && D && D.rid) api('deleteFile', [PW, D.rid, e.i
 async function upOne(f, rid){
   const data = await b64(f.e.b);
   f.e.id = await api('uploadFile', [PW, rid, f.name, f.e.b.type || 'application/octet-stream', data]);
-  if (!files().some(x => x.e === f.e)) api('deleteFile', [PW, rid, f.e.id]).catch(() => {});   // deleted while it was uploading
+  if (D && D.rid === rid && !files().some(x => x.e === f.e)) api('deleteFile', [PW, rid, f.e.id]).catch(() => {});   // deleted while it was uploading
 }
 function pump(){
   if (PUMP || SUBMITTING || !D) return PUMP;
@@ -569,32 +587,97 @@ async function submitR(){
   const ng = T.items.filter(it => check(it, D.items[it.pos].value) === 'NG');
   if (ng.length && !await confirmBox('Out of tolerance', 'Item(s) <b>' + ng.map(i => esc(i.pos)).join(', ') + '</b> are NG. The report will show NEGATIVE RESULT.', [['Go back','grey',0],['Submit','red',1]])) return;
 
-  SUBMITTING = true; show('pgM'); pg('Preparing…', 0.02);
-  try {
-    if (!D.rid || D.ref !== D.fref) { pg('Preparing report folder…', 0.03); hide('pgM'); await refSet(true); show('pgM'); }
-    if (!D.rid) throw new Error('Report folder could not be created');
-    if (PUMP) { pg('Finishing background upload…', 0.05); await PUMP; }
-    const left = files().filter(f => !f.e.id), all = files().length;
-    for (let i = 0; i < left.length; i++) {
-      pg('Uploading ' + (all - left.length + i + 1) + ' of ' + all + '…', 0.05 + 0.75 * i / left.length);
-      await retry(() => upOne(left[i], D.rid));
-      drawPh(left[i].pos); dirty();
-    }
-    pg('Making the PDF report…', 0.85);
-    const out = {};
-    T.items.forEach(it => { const a = D.items[it.pos]; out[it.pos] = { value: a.value, photos: a.photos.map(e => e.id), video: a.video ? a.video.id : '' }; });
-    const dd = D.date.split('-');
-    const r = await retry(() => api('finishReport', [PW, D.rid, { ref: D.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: D.notes, items: out,
-                                                               edit: !!D.edit, oref: D.edit ? D.edit.ref : '' }]), 1);
-    if (D.edit) r.result = 'Updated (Rev ' + (D.edit.rev + 1) + ') – ' + r.result;
-    pg('Done', 1);
-    await dbDel(T.id);
-    hide('pgM'); showDone(r);
-  } catch (e) {
-    hide('pgM');
-    if (e.message !== 'CANCEL') confirmBox('Not submitted', esc(e.message) + '<br><br>Nothing is lost – the report is still saved on this tablet. Check the internet and press Submit again.', [['OK','pri',0]]);
-  } finally { SUBMITTING = false; if (D) count(); }
+  if (PROC) { show('pgM'); pg('Preparing photos…', 0.5); while (PROC) await new Promise(r => setTimeout(r, 150)); hide('pgM'); dirty(); }
+  // make sure the folder exists / has the right number (one quick call; asks if the number is already used)
+  try { if (!D.rid || D.ref !== D.fref) { show('pgM'); pg('Preparing report folder…', 0.1); hide('pgM'); await refSet(true); } }
+  catch (e) { hide('pgM'); if (e.message !== 'CANCEL') confirmBox('Not submitted', esc(e.message) + '<br><br>Nothing is lost – check the internet and press Submit again.', [['OK','pri',0]]); return; }
+  if (!D.rid) return toast('Report folder could not be created – check the internet and press Submit again');
+
+  // hand the report to the background sender and give the operator a fresh form
+  const q = { qid: Date.now() + '-' + Math.random().toString(36).slice(2, 7), tpl: T.id, tname: T.name, label: T.refLabel, pos: T.items.map(i => i.pos),
+              d: D, status: 'waiting', err: '', at: Date.now() };
+  if (PUMP) { SUBMITTING = true; show('pgM'); pg('Saving…', 0.8); await PUMP; hide('pgM'); }   // only the photo uploading right now finishes (not sent twice); the rest go with the background sender
+  SUBMITTING = false;
+  await obPut(q); await dbDel(T.id);
+  const i = TPLS.indexOf(T); D = null;
+  toast('📤 ' + q.label + ' ' + q.d.ref + ' is being submitted in the background – start the next inspection', true);
+  await openTpl(i);
+  sendQ();
 }
+
+/* ---------- background sender (outbox) ----------
+ * Each submitted report: upload whatever photos/video are left → make the PDF → write the sheet.
+ * Runs while the app is open on any screen; after a restart it carries on by itself. */
+let SENDQ = null, sqT, OB = [];
+let DONE = []; try { DONE = JSON.parse(localStorage.getItem('qcDone') || '[]'); } catch (e) {}   // last 30 finished reports, kept on this tablet
+function qFiles(q){
+  const L = [];
+  q.pos.forEach(p => { const a = q.d.items[p]; if (!a) return;
+    a.photos.forEach(e => L.push({ pos: p, e: e, name: 'Pos ' + p + ' - photo.jpg' }));
+    const vt = a.video && a.video.b ? a.video.b.type : '';
+    if (a.video) L.push({ pos: p, e: a.video, name: 'Pos ' + p + ' - video.' + (/mp4/.test(vt) ? 'mp4' : /quicktime/.test(vt) ? 'mov' : 'webm') });
+  });
+  return L;
+}
+async function obRefresh(){
+  OB = await obAll(); OB.sort((a, b) => a.at - b.at);
+  const n = OB.length, bad = OB.filter(q => q.status === 'error').length;
+  $('obN').textContent = n ? n + ' sending' + (bad ? ' ⚠' : '') : 'Status';
+  $('obB').style.background = bad ? '#C62828' : n ? '' : 'rgba(46,125,50,.6)';
+  if ($('obM').style.display === 'flex') obDraw();
+}
+function obDraw(){
+  const row = q => { const f = qFiles(q), up = f.filter(x => x.e.id).length;
+    return '<div class="obi"><b>' + esc(q.label + ' ' + q.d.ref) + '</b> – ' + esc(q.tname) + (q.d.edit ? ' (update)' : '') + '<br>' +
+      (q.status === 'error' ? '<span style="color:#C62828">⚠ ' + esc(q.err) + '</span>' : q.status === 'sending' ? '⏳ ' + esc(q.step || 'sending…') : '⏳ waiting') +
+      ' · ' + up + '/' + f.length + ' files uploaded' +
+      (q.status === 'error' ? '<div class="btns"><button class="grey" onclick="obBack(\'' + q.qid + '\')">Open in form</button><button onclick="obRetry(\'' + q.qid + '\')">Try again (upload + PDF)</button></div>'
+       : q.status === 'waiting' && !SENDQ ? '<div class="btns"><button onclick="sendQ()">Send now</button></div>' : '') + '</div>'; };
+  $('obL').innerHTML = (OB.length ? OB.map(row).join('') : '<div class="hint">Nothing waiting – all reports are sent.</div>') +
+    (DONE.length ? '<div class="hint" style="margin-top:12px"><b>Recently submitted</b></div>' : '') +
+    DONE.slice().reverse().map(r => '<div class="obi">✓ <b>' + esc(r.name) + '</b>' + (r.tname ? ' – ' + esc(r.tname) : '') + (r.at ? ' · ' + esc(r.at) : '') + '<br><span style="color:' + (r.ng ? '#C62828' : '#2E7D32') + '">' + esc(r.result) + '</span>' +
+      '<div class="btns"><button class="green" onclick="window.open(\'' + esc(r.pdf) + '\',\'_blank\')">Open PDF</button></div></div>').join('');
+}
+function obShow(){ obDraw(); show('obM'); }
+async function obRetry(id){ const q = OB.find(x => x.qid === id); if (!q) return; q.status = 'waiting'; q.err = ''; await obPut(q); obRefresh(); sendQ(); }
+// a report that cannot be sent goes back into the form so it can be fixed
+async function obBack(id){
+  const q = OB.find(x => x.qid === id); if (!q) return;
+  const i = TPLS.findIndex(t => t.id === q.tpl); if (i < 0) return toast('Template not found');
+  if (await dbGet(q.tpl) && !await confirmBox('Replace current form?', 'The ' + esc(q.tname) + ' form already has an unfinished report. It will be replaced.', [['Cancel','grey',0],['Replace','red',1]])) return;
+  await dbPut(q.tpl, q.d); await obDel(q.qid); hide('obM'); obRefresh();
+  D = null; T = null; await openTpl(i);
+}
+function sendQ(){
+  if (SENDQ || !PW) return SENDQ;
+  SENDQ = (async () => {
+    for (;;) {
+      await obRefresh();
+      const q = OB.find(x => x.status !== 'error'); if (!q) return;
+      try {
+        q.status = 'sending'; q.step = 'uploading photos…'; await obPut(q); obRefresh();
+        for (const f of qFiles(q).filter(x => !x.e.id)) {
+          await retry(() => upOne(f, q.d.rid)); await obPut(q); obRefresh();
+        }
+        q.step = 'making the PDF…'; await obPut(q); obRefresh();
+        const out = {}, dd = q.d.date.split('-');
+        q.pos.forEach(p => { const a = q.d.items[p]; out[p] = { value: a.value, photos: a.photos.map(e => e.id), video: a.video ? a.video.id : '' }; });
+        const r = await retry(() => api('finishReport', [PW, q.d.rid, { ref: q.d.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: q.d.notes, items: out,
+                                                                      edit: !!q.d.edit, oref: q.d.edit ? q.d.edit.ref : '' }]), 1);
+        await obDel(q.qid);
+        DONE.push({ name: q.label + ' ' + q.d.ref, tname: q.tname, at: stampText(), result: (q.d.edit ? 'Updated (Rev ' + (q.d.edit.rev + 1) + ') – ' : '') + r.result, ng: r.ng, pdf: r.pdf });
+        DONE = DONE.slice(-30); try { localStorage.setItem('qcDone', JSON.stringify(DONE)); } catch (e) {}
+        toast('✓ ' + q.label + ' ' + q.d.ref + ' submitted – ' + r.result, !r.ng);
+      } catch (e) {
+        const net = /internet|reachable|fetch|network/i.test(e.message);
+        q.status = net ? 'waiting' : 'error'; q.err = e.message; q.step = ''; await obPut(q); obRefresh();
+        if (net) { clearTimeout(sqT); sqT = setTimeout(sendQ, 20000); return; }   // offline: try again in 20 s
+      }
+    }
+  })().finally(() => { SENDQ = null; obRefresh(); });
+  return SENDQ;
+}
+window.addEventListener('online', () => sendQ());
 function showDone(r){
   $('form').classList.add('hidden'); $('bar').classList.add('hidden'); $('done').classList.remove('hidden'); $('backB').classList.add('hidden');
   $('dRes').textContent = r.result; $('dRes').style.color = r.ng ? '#C62828' : '#2E7D32';
