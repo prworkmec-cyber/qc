@@ -271,7 +271,8 @@ async function openTpl(i){
 }
 function renderForm(){
   const ent = x => x && (x.b || x.id) ? x : x ? { b: x, id: null } : null;   // photo/video = { b: blob, id: Drive file id once uploaded }
-  T.items.forEach(it => { const a = D.items[it.pos] = D.items[it.pos] || { value:'', photos:[], video:null }; a.photos = a.photos.map(ent); a.video = ent(a.video); });
+  T.items.forEach(it => { const a = D.items[it.pos] = D.items[it.pos] || { value:'', photos:[], video:null }; a.photos = a.photos.map(ent); a.video = ent(a.video);
+    if (it.type === 'VIDEO') a.value = ''; });   // video rows have no typed value
   const e = D.edit; $('editB').classList.toggle('hidden', !e);
   if (e) $('editB').innerHTML = '⚠ <b>' + esc(T.refLabel + ' ' + e.ref) + ' was already submitted</b> on ' + esc(e.at) + ' by ' + esc(e.by) + ' (Rev ' + e.rev + ').<br>' +
     'Its details are loaded below – change what is needed and press <b>Submit report</b> to update its PDF (Rev ' + (e.rev + 1) + ') and its column in the sheet.';
@@ -287,6 +288,7 @@ function rowHtml(it){
   let det;
   if (it.type === 'OKNG') det = '<div class="okng"><button class="ok" onclick="setOk(\'' + p + '\',\'OK\')">OK</button><button class="ng" onclick="setOk(\'' + p + '\',\'NG\')">NG</button></div>';
   else if (it.type === 'PHOTO') det = '<div class="hint" style="margin:0;text-align:center">Photo only – add photos →</div>';
+  else if (it.type === 'VIDEO') det = '<div class="hint" style="margin:0;text-align:center">Video only – record video →</div>';   // nothing to type
   else if (it.type === 'DATE') det = '<input type="date" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
   else if (it.type === 'NUMBER') det = '<input inputmode="decimal" placeholder="type value" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
   else det = '<input placeholder="' + (it.type === 'VIDEO' ? 'value (optional)' : 'type here') + '" value="' + esc(v) + '" oninput="setV(\'' + p + '\',this.value)">';
