@@ -326,7 +326,7 @@ $('rows').addEventListener('drop', e => {
   const imgs = fs.filter(f => /^image\//.test(f.type)), vid = fs.find(f => /^video\//.test(f.type));
   if (vid && it.type === 'VIDEO') {
     if (vid.size > 30 * 1048576) toast('Video is ' + (vid.size / 1048576).toFixed(0) + ' MB – too big (max 30 MB)');
-    else { D.items[pos].video = { b: vid, id: null }; drawPh(pos); count(); dirty(); pump(); }
+    else { gone(D.items[pos].video); D.items[pos].video = { b: vid, id: null }; drawPh(pos); count(); dirty(); pump(); }
   }
   if (imgs.length && it.photo !== 'NONE') { PH_POS = pos; PH_REPLACE = -1; addPhotos(imgs); }
   else if (!vid || it.type !== 'VIDEO') toast('Drop photos (JPG / PNG)' + (it.type === 'VIDEO' ? ' or a video' : '') + ' here');
@@ -339,7 +339,7 @@ async function addPhotos(files){
   for (const f of files) {
     try {
       const b = await shrink(f);
-      if (PH_REPLACE >= 0) { a.photos[PH_REPLACE] = { b: b, id: null }; PH_REPLACE = -1; } else a.photos.push({ b: b, id: null });
+      if (PH_REPLACE >= 0) { gone(a.photos[PH_REPLACE]); a.photos[PH_REPLACE] = { b: b, id: null }; PH_REPLACE = -1; } else a.photos.push({ b: b, id: null });
     } catch (e) { toast('Could not read photo: ' + e.message); }
   }
   drawPh(pos); count(); dirty(); pump();
@@ -360,7 +360,7 @@ async function shrink(file){
 }
 function pv(pos, i){
   $('pvImg').src = url(D.items[pos].photos[i].b); show('pvM');
-  $('pvDel').onclick = () => { D.items[pos].photos.splice(i, 1); hide('pvM'); drawPh(pos); count(); dirty(); };
+  $('pvDel').onclick = () => { gone(D.items[pos].photos.splice(i, 1)[0]); hide('pvM'); drawPh(pos); count(); dirty(); };
   $('pvRe').onclick = () => { hide('pvM'); cam(pos, i); };
 }
 
@@ -383,7 +383,7 @@ function vrStart(){
   VR.rec.onstop = () => {
     clearInterval(VR.iv);
     const b = new Blob(VR.chunks, { type: (VR.rec.mimeType || 'video/webm').split(';')[0] });
-    D.items[VR.pos].video = { b: b, id: null }; vrClose(); drawPh(VR.pos); count(); dirty(); pump();
+    gone(D.items[VR.pos].video); D.items[VR.pos].video = { b: b, id: null }; vrClose(); drawPh(VR.pos); count(); dirty(); pump();
     toast('Video saved (' + (b.size / 1048576).toFixed(1) + ' MB)', true);
   };
   VR.rec.start(1000); VR.t0 = Date.now(); $('vrGo').textContent = '■ Stop';
@@ -394,11 +394,11 @@ $('vrFile').onclick = () => { $('vidIn').value = ''; $('vidIn').click(); };
 $('vidIn').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   if (f.size > 30 * 1048576) return toast('Video is ' + (f.size/1048576).toFixed(0) + ' MB – too big (max 30 MB). Record a shorter one with the in-app recorder.');
-  D.items[VR.pos].video = { b: f, id: null }; vrClose(); drawPh(VR.pos); count(); dirty(); pump();
+  gone(D.items[VR.pos].video); D.items[VR.pos].video = { b: f, id: null }; vrClose(); drawPh(VR.pos); count(); dirty(); pump();
 };
 function vp(pos){
   $('vpV').src = url(D.items[pos].video.b); show('vpM');
-  $('vpDel').onclick = () => { D.items[pos].video = null; $('vpV').pause(); hide('vpM'); drawPh(pos); count(); dirty(); };
+  $('vpDel').onclick = () => { gone(D.items[pos].video); D.items[pos].video = null; $('vpV').pause(); hide('vpM'); drawPh(pos); count(); dirty(); };
   $('vpRe').onclick = () => { $('vpV').pause(); hide('vpM'); vrOpen(pos); };
 }
 
@@ -442,25 +442,47 @@ let STARTING = null, PUMP = null, SUBMITTING = false, rt, rs;
 function refSoon(){ clearTimeout(rs); rs = setTimeout(refSet, 1500); }
 // create the report folder once (asks if this cage number already has a report)
 function refSet(interactive){
-  if (!D || !T || D.rid || !$('fRef').value.trim()) return Promise.resolve(D && D.rid);
+  if (D && T && D.rid) return refRename(interactive);
+  if (!D || !T || !$('fRef').value.trim()) return Promise.resolve(D && D.rid);
   if (STARTING) return STARTING;
   dirty(); const d = D, t = T;
   STARTING = (async () => {
-    try { d.rid = (await api('startReport', [PW, t.id, d.ref, false])).rid; }
+    try { d.rid = (await api('startReport', [PW, t.id, d.ref, false])).rid; d.fref = d.ref; }
     catch (e) {
       if (e.message !== 'DUPLICATE') { if (interactive) throw e; return null; }
       const yes = await confirmBox('Already submitted', t.refLabel + ' <b>' + esc(d.ref) + '</b> already has a ' + esc(t.name) + ' report. Make another one?', [['No, change number','grey',0],['Yes, new report','red',1]]);
       if (!yes) { if (D === d) { $('fRef').value = ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return null; }
-      d.rid = (await api('startReport', [PW, t.id, d.ref, true])).rid;
+      d.rid = (await api('startReport', [PW, t.id, d.ref, true])).rid; d.fref = d.ref;
     }
     if (D === d) { dirty(); pump(); }
     return d.rid;
   })().finally(() => { STARTING = null; });
   return STARTING;
 }
+// cage number corrected after the folder was made: rename the folder in Drive
+function refRename(interactive){
+  dirty(); const d = D, t = T;
+  if (!d.ref || d.ref === d.fref) return Promise.resolve(d.rid);
+  if (STARTING) return STARTING;
+  STARTING = (async () => {
+    try { await api('renameReport', [PW, d.rid, d.ref, false]); }
+    catch (e) {
+      if (e.message !== 'DUPLICATE') { if (interactive) throw e; return d.rid; }
+      const yes = await confirmBox('Already submitted', t.refLabel + ' <b>' + esc(d.ref) + '</b> already has a ' + esc(t.name) + ' report. Use this number anyway?', [['No, change number','grey',0],['Yes, use it','red',1]]);
+      if (!yes) { if (D === d) { $('fRef').value = d.fref || ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return d.rid; }
+      await api('renameReport', [PW, d.rid, d.ref, true]);
+    }
+    d.fref = d.ref; if (D === d) dirty();
+    return d.rid;
+  })().finally(() => { STARTING = null; });
+  return STARTING;
+}
+// photo / video removed in the app → removed from Drive straight away
+function gone(e){ if (e && e.id && D && D.rid) api('deleteFile', [PW, D.rid, e.id]).catch(() => {}); }
 async function upOne(f, rid){
   const data = await b64(f.e.b);
   f.e.id = await api('uploadFile', [PW, rid, f.name, f.e.b.type || 'application/octet-stream', data]);
+  if (!files().some(x => x.e === f.e)) api('deleteFile', [PW, rid, f.e.id]).catch(() => {});   // deleted while it was uploading
 }
 function pump(){
   if (PUMP || SUBMITTING || !D) return PUMP;
@@ -493,7 +515,7 @@ async function submitR(){
 
   SUBMITTING = true; show('pgM'); pg('Preparing…', 0.02);
   try {
-    if (!D.rid) { pg('Creating report folder…', 0.03); hide('pgM'); await refSet(true); show('pgM'); }
+    if (!D.rid || D.ref !== D.fref) { pg('Preparing report folder…', 0.03); hide('pgM'); await refSet(true); show('pgM'); }
     if (!D.rid) throw new Error('Report folder could not be created');
     if (PUMP) { pg('Finishing background upload…', 0.05); await PUMP; }
     const left = files().filter(f => !f.e.id), all = files().length;
