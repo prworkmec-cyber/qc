@@ -51,6 +51,7 @@
   .ph .t img,.ph .t video{width:100%;height:100%;object-fit:cover;display:block}
   .ph .t i{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-style:normal;padding:1px 5px;border-radius:4px}
   .ph .t i.up{background:#2E7D32}
+  .ph .t em{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-style:normal;text-align:center}
   .ph .t span{position:absolute;top:2px;left:2px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px}
   .addb{width:104px;height:104px;border-radius:6px;border:2px dashed #9CA3AF;background:#F9FAFB;color:#374151;font-size:13px;font-weight:bold;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;padding:4px;text-align:center}
   .addb b{font-size:26px}
@@ -101,6 +102,7 @@
       <div><label id="refL">Cage No.</label><input id="fRef" inputmode="text" autocomplete="off" oninput="dirty(); refSoon()" onchange="refSet()"></div>
       <div><label>Date</label><input id="fDate" type="date" oninput="dirty()"></div>
     </div>
+    <div class="card warn hidden" id="editB"></div>
     <div class="card hidden" id="drwC"><div class="hint" style="margin:0 0 6px">DRAWING – tap to enlarge</div><img id="drwImg" alt="Drawing" style="display:block;width:100%;max-height:340px;object-fit:contain;cursor:zoom-in" onclick="show('drM')"></div>
     <div class="th"><div>POS.</div><div>DESCRIPTION</div><div>NOMINAL / DETECTED</div><div>PHOTO</div></div>
     <div id="rows"></div>
@@ -235,14 +237,20 @@ async function openTpl(i){
     const a = await confirmBox('Saved draft found', 'There is an unfinished ' + esc(T.name) + ' report' + (saved.ref ? ' for ' + esc(T.refLabel) + ' <b>' + esc(saved.ref) + '</b>' : '') + '.', [['Start new','grey','new'],['Continue draft','green','go']]);
     if (a === 'go') D = saved; else { await dbDel(T.id); if (saved.rid) api('discardReport', [PW, saved.rid]).catch(() => {}); }
   }
-  const ent = x => x && x.b ? x : x ? { b: x, id: null } : null;   // photo/video = { b: blob, id: Drive file id once uploaded }
+  renderForm();
+}
+function renderForm(){
+  const ent = x => x && (x.b || x.id) ? x : x ? { b: x, id: null } : null;   // photo/video = { b: blob, id: Drive file id once uploaded }
   T.items.forEach(it => { const a = D.items[it.pos] = D.items[it.pos] || { value:'', photos:[], video:null }; a.photos = a.photos.map(ent); a.video = ent(a.video); });
+  const e = D.edit; $('editB').classList.toggle('hidden', !e);
+  if (e) $('editB').innerHTML = '⚠ <b>' + esc(T.refLabel + ' ' + e.ref) + ' was already submitted</b> on ' + esc(e.at) + ' by ' + esc(e.by) + ' (Rev ' + e.rev + ').<br>' +
+    'Its details are loaded below – change what is needed and press <b>Submit report</b> to update its PDF (Rev ' + (e.rev + 1) + ') and its column in the sheet.';
   $('home').classList.add('hidden'); $('form').classList.remove('hidden'); $('bar').classList.remove('hidden'); $('backB').classList.remove('hidden');
   $('title').textContent = T.name; $('fTpl').textContent = T.name; $('refL').textContent = T.refLabel;
   $('fRef').value = D.ref; $('fDate').value = D.date; $('fNotes').value = D.notes;
   $('rows').innerHTML = T.items.map(rowHtml).join('');
   T.items.forEach(it => { drawPh(it.pos); paintRes(it.pos); });
-  count(); window.scrollTo(0,0); loadDrawing(); pump();
+  count(); window.scrollTo(0,0); loadDrawing(); pump(); thumbs();
 }
 function rowHtml(it){
   const p = esc(it.pos), v = D.items[it.pos].value;
@@ -306,8 +314,8 @@ let PH_POS = null, PH_REPLACE = -1;
 function drawPh(pos){
   const it = itemOf(pos), a = D.items[pos], p = esc(pos);
   const bd = e => e.id ? '<i class="up">✓</i>' : '<i>⏳</i>';
-  let h = a.photos.map((e, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')"><img src="' + url(e.b) + '"><span>' + (i+1) + '</span>' + bd(e) + '</div>').join('');
-  if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')"><video src="' + url(a.video.b) + '#t=0.5" muted playsinline></video><span>▶ video</span>' + bd(a.video) + '</div>'
+  let h = a.photos.map((e, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')">' + (e.b ? '<img src="' + url(e.b) + '">' : '<em>loading…</em>') + '<span>' + (i+1) + '</span>' + bd(e) + '</div>').join('');
+  if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')">' + (a.video.b ? '<video src="' + url(a.video.b) + '#t=0.5" muted playsinline></video>' : '<em>🎥<br>saved video</em>') + '<span>▶ video</span>' + bd(a.video) + '</div>'
                                        : '<div class="addb" onclick="vrOpen(\'' + p + '\')"><b>🎥</b>Record video</div>';
   if (it.photo !== 'NONE') h += '<div class="addb" onclick="gal(\'' + p + '\')"><b>📷</b>Add photo<small>or drop here</small></div>';   // phone asks: Camera or Gallery; computer: drag & drop
   $('p_' + pos).innerHTML = h;
@@ -359,7 +367,9 @@ async function shrink(file){
   return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.78));
 }
 function pv(pos, i){
-  $('pvImg').src = url(D.items[pos].photos[i].b); show('pvM');
+  const e = D.items[pos].photos[i];
+  $('pvImg').src = e.b ? url(e.b) : ''; show('pvM');
+  if (e.old && D.rid) api('getFile', [PW, D.rid, e.id, false]).then(r => { if (D && D.items[pos].photos[i] === e) $('pvImg').src = 'data:' + r.mime + ';base64,' + r.b64; }).catch(() => {});
   $('pvDel').onclick = () => { gone(D.items[pos].photos.splice(i, 1)[0]); hide('pvM'); drawPh(pos); count(); dirty(); };
   $('pvRe').onclick = () => { hide('pvM'); cam(pos, i); };
 }
@@ -396,8 +406,16 @@ $('vidIn').onchange = e => {
   if (f.size > 30 * 1048576) return toast('Video is ' + (f.size/1048576).toFixed(0) + ' MB – too big (max 30 MB). Record a shorter one with the in-app recorder.');
   gone(D.items[VR.pos].video); D.items[VR.pos].video = { b: f, id: null }; vrClose(); drawPh(VR.pos); count(); dirty(); pump();
 };
-function vp(pos){
-  $('vpV').src = url(D.items[pos].video.b); show('vpM');
+async function vp(pos){
+  const v = D.items[pos].video;
+  if (!v.b) {   // video of an opened report: it stays in Drive
+    const a = await confirmBox('Saved video', 'This video is already saved in the report folder.', [['Close','grey',0],['Open','pri','open'],['Record again','grey','re'],['Delete','red','del']]);
+    if (a === 'open') window.open('https://drive.google.com/file/d/' + v.id + '/view', '_blank');
+    if (a === 're') vrOpen(pos);
+    if (a === 'del') { gone(v); D.items[pos].video = null; drawPh(pos); count(); dirty(); }
+    return;
+  }
+  $('vpV').src = url(v.b); show('vpM');
   $('vpDel').onclick = () => { gone(D.items[pos].video); D.items[pos].video = null; $('vpV').pause(); hide('vpM'); drawPh(pos); count(); dirty(); };
   $('vpRe').onclick = () => { $('vpV').pause(); hide('vpM'); vrOpen(pos); };
 }
@@ -434,7 +452,8 @@ function files(){   // every photo / video still on the form, in item order
   const L = []; if (!T || !D) return L;
   T.items.forEach(it => { const a = D.items[it.pos];
     a.photos.forEach(e => L.push({ pos: it.pos, e: e, name: 'Pos ' + it.pos + ' - photo.jpg' }));
-    if (a.video) L.push({ pos: it.pos, e: a.video, name: 'Pos ' + it.pos + ' - video.' + (/mp4/.test(a.video.b.type) ? 'mp4' : /quicktime/.test(a.video.b.type) ? 'mov' : 'webm') });
+    const vt = a.video && a.video.b ? a.video.b.type : '';
+    if (a.video) L.push({ pos: it.pos, e: a.video, name: 'Pos ' + it.pos + ' - video.' + (/mp4/.test(vt) ? 'mp4' : /quicktime/.test(vt) ? 'mov' : 'webm') });
   });
   return L;
 }
@@ -450,8 +469,9 @@ function refSet(interactive){
     try { d.rid = (await api('startReport', [PW, t.id, d.ref, false])).rid; d.fref = d.ref; }
     catch (e) {
       if (e.message !== 'DUPLICATE') { if (interactive) throw e; return null; }
-      const yes = await confirmBox('Already submitted', t.refLabel + ' <b>' + esc(d.ref) + '</b> already has a ' + esc(t.name) + ' report. Make another one?', [['No, change number','grey',0],['Yes, new report','red',1]]);
-      if (!yes) { if (D === d) { $('fRef').value = ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return null; }
+      const a = await dupAsk(t, d.ref);
+      if (a === 'open') { if (D === d) await openExisting(d.ref); if (interactive) throw new Error('CANCEL'); return null; }
+      if (a !== 'new') { if (D === d) { $('fRef').value = ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return null; }
       d.rid = (await api('startReport', [PW, t.id, d.ref, true])).rid; d.fref = d.ref;
     }
     if (D === d) { dirty(); pump(); }
@@ -468,14 +488,50 @@ function refRename(interactive){
     try { await api('renameReport', [PW, d.rid, d.ref, false]); }
     catch (e) {
       if (e.message !== 'DUPLICATE') { if (interactive) throw e; return d.rid; }
-      const yes = await confirmBox('Already submitted', t.refLabel + ' <b>' + esc(d.ref) + '</b> already has a ' + esc(t.name) + ' report. Use this number anyway?', [['No, change number','grey',0],['Yes, use it','red',1]]);
-      if (!yes) { if (D === d) { $('fRef').value = d.fref || ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return d.rid; }
+      const a = await dupAsk(t, d.ref);
+      if (a === 'open') {
+        if (D === d) { api('discardReport', [PW, d.rid]).catch(() => {}); await openExisting(d.ref); }   // unfinished draft folder removed (or, if it was an edit, only its new uploads)
+        if (interactive) throw new Error('CANCEL'); return d.rid;
+      }
+      if (a !== 'new') { if (D === d) { $('fRef').value = d.fref || ''; $('fRef').focus(); dirty(); } if (interactive) throw new Error('CANCEL'); return d.rid; }
       await api('renameReport', [PW, d.rid, d.ref, true]);
     }
     d.fref = d.ref; if (D === d) dirty();
     return d.rid;
   })().finally(() => { STARTING = null; });
   return STARTING;
+}
+function dupAsk(t, ref){
+  return confirmBox('Already submitted', t.refLabel + ' <b>' + esc(ref) + '</b> already has a ' + esc(t.name) + ' report.<br>Open it to check or change its details, or make a separate new report?',
+    [['Change number','grey',0],['New report','grey','new'],['Open it','green','open']]);
+}
+// load a submitted report into the form; submitting it again updates the same PDF / sheet column
+async function openExisting(ref){
+  const t = T; show('pgM'); pg('Opening ' + t.refLabel + ' ' + ref + '…', 0.3);
+  try {
+    const r = await api('loadReport', [PW, t.id, ref]);
+    if (T !== t) return;
+    const dd = String(r.date).split('-'), items = {};
+    Object.keys(r.items).forEach(p => { const a = r.items[p];
+      items[p] = { value: a.value, photos: a.photos.map(id => ({ b: null, id: id, old: 1 })), video: a.video ? { b: null, id: a.video, old: 1 } : null }; });
+    D = { ref: r.ref, fref: r.ref, rid: r.rid, date: dd.length === 3 ? dd[2] + '-' + dd[1] + '-' + dd[0] : isoToday(), notes: r.notes || '', items: items,
+          edit: { ref: r.ref, at: r.at, by: r.by, rev: r.rev || 0 } };
+    await dbPut(t.id, D); hide('pgM'); renderForm();
+  } catch (e) { hide('pgM'); toast(e.message); }
+}
+let TH = null;
+function thumbs(){
+  if (TH || !D || !D.rid) return;
+  const d = D;
+  TH = (async () => {
+    for (;;) {
+      if (D !== d) return;
+      const f = files().find(x => x.e.old && !x.e.b && !x.e.noth && !/video/.test(x.name)); if (!f) return;
+      try { const r = await api('getFile', [PW, d.rid, f.e.id, true]); f.e.b = await (await fetch('data:' + r.mime + ';base64,' + r.b64)).blob(); }
+      catch (e) { f.e.noth = 1; }
+      if (D === d) { drawPh(f.pos); dirty(); }
+    }
+  })().finally(() => { TH = null; });
 }
 // photo / video removed in the app → removed from Drive straight away
 function gone(e){ if (e && e.id && D && D.rid) api('deleteFile', [PW, D.rid, e.id]).catch(() => {}); }
@@ -528,7 +584,9 @@ async function submitR(){
     const out = {};
     T.items.forEach(it => { const a = D.items[it.pos]; out[it.pos] = { value: a.value, photos: a.photos.map(e => e.id), video: a.video ? a.video.id : '' }; });
     const dd = D.date.split('-');
-    const r = await retry(() => api('finishReport', [PW, D.rid, { ref: D.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: D.notes, items: out }]), 1);
+    const r = await retry(() => api('finishReport', [PW, D.rid, { ref: D.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: D.notes, items: out,
+                                                               edit: !!D.edit, oref: D.edit ? D.edit.ref : '' }]), 1);
+    if (D.edit) r.result = 'Updated (Rev ' + (D.edit.rev + 1) + ') – ' + r.result;
     pg('Done', 1);
     await dbDel(T.id);
     hide('pgM'); showDone(r);
