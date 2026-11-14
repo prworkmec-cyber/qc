@@ -692,6 +692,9 @@ window.addEventListener('online', () => pump());
 async function submitR(){
   dirty();
   if (!D.ref) { $('fRef').focus(); return toast('Enter ' + T.refLabel); }
+  const nv = T.items.filter(it => it.type === 'VIDEO' && !D.items[it.pos].video);
+  if (nv.length) { $('r_' + nv[0].pos).scrollIntoView({ block: 'center' });
+    return confirmBox('Video missing', 'Record the video for <b>' + nv.map(i => esc(i.desc)).join(', ') + '</b> before submitting.<br>Without it there is no video link in the sheet or the PDF.', [['OK','pri',0]]); }
   const m = missing();
   if (m.length) {
     const go = await confirmBox(m.length + ' item(s) not complete', 'Not filled: <b>' + m.map(i => esc(i.pos)).join(', ') + '</b> (marked in orange).<br>Submit anyway?', [['Go back','grey',0],['Submit anyway','red',1]]);
