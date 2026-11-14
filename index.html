@@ -144,6 +144,7 @@
   <div class="btns" style="flex-direction:column">
     <button class="green" style="padding:16px;font-size:18px" onclick="hide('srcM'); cam(PH_POS, -1)">📷 Camera</button>
     <button style="padding:16px;font-size:18px" onclick="hide('srcM'); gal(PH_POS)">🖼 Gallery</button>
+    <div class="hint" style="margin:-4px 0 4px;text-align:center">In the gallery, press and hold a photo, then tap the others to pick several at once</div>
     <button class="grey" onclick="hide('srcM')">Cancel</button>
   </div>
 </div></div>
@@ -183,6 +184,15 @@
 </div></div>
 
 <!-- add / edit an inspection row (applies to all future reports) -->
+<!-- after a camera photo: keep shooting for the same row -->
+<div class="modal" id="moreM"><div class="box" style="max-width:360px">
+  <h3 style="margin:0 0 10px" id="moreH">Photo added</h3>
+  <div class="btns" style="flex-direction:column">
+    <button class="green" style="padding:16px;font-size:18px" onclick="hide('moreM'); cam(PH_POS, -1)">📷 Take another</button>
+    <button class="grey" style="padding:14px" onclick="hide('moreM')">Done</button>
+  </div>
+</div></div>
+
 <div class="modal" id="reM"><div class="box" style="max-width:460px">
   <h3 id="reH" style="margin:0 0 4px">Add row</h3>
   <div class="hint">Saved in the template: every future report gets this change, and the Top/Bottom tab is updated.</div>
@@ -192,6 +202,7 @@
     <option value="PHOTO">Photo only</option><option value="TEXT">Text</option><option value="DATE">Date</option><option value="VIDEO">Video</option></select></label>
   <label>Nominal (shown in the report)<input id="reN" maxlength="60" placeholder="e.g. 2980 ±5"></label>
   <div id="reMM" style="display:flex;gap:8px"><label style="flex:1">Min<input id="reMin" inputmode="decimal"></label><label style="flex:1">Max<input id="reMax" inputmode="decimal"></label></div>
+  <label id="reOL">Position (1 = first row)<input id="reO" type="number" inputmode="numeric" min="1"></label>
   <label>Photo<select id="reP"><option value="OPTIONAL">Optional</option><option value="REQUIRED">Required</option><option value="NONE">No photo</option></select></label>
   <div class="btns"><button class="grey" onclick="hide('reM')">Cancel</button><button class="green" id="reS">Save</button></div>
 </div></div>
@@ -322,8 +333,9 @@ function reType(){ const ty = $('reT').value; $('reMM').style.display = ty === '
 function rowForm(title, it, onSave){
   $('reH').textContent = title; $('reD').value = it ? it.desc : ''; $('reT').value = it ? it.type : 'PHOTO'; $('reN').value = it ? it.nominal : '';
   $('reMin').value = it ? it.min : ''; $('reMax').value = it ? it.max : ''; $('reP').value = it ? it.photo : 'OPTIONAL'; reType();
+  $('reOL').style.display = it ? 'block' : 'none'; $('reO').max = T.items.length; $('reO').value = it ? it.no : '';
   $('reS').onclick = async () => {
-    const f = { desc: $('reD').value.trim(), type: $('reT').value, nominal: $('reN').value.trim(), min: $('reMin').value.trim(), max: $('reMax').value.trim(), photo: $('reP').value };
+    const f = { desc: $('reD').value.trim(), type: $('reT').value, nominal: $('reN').value.trim(), min: $('reMin').value.trim(), max: $('reMax').value.trim(), photo: $('reP').value, to: parseInt($('reO').value, 10) || 0 };
     if (!f.desc) return toast('Enter a description');
     if (f.type !== 'NUMBER') { f.min = ''; f.max = ''; }
     hide('reM'); await onSave(f);
@@ -336,7 +348,14 @@ async function rowsChanged(call, msg){
   catch (e) { hide('pgM'); toast(e.message); return false; }
 }
 function rowAdd(after){ rowForm('Add row' + (after ? ' below ' + (itemOf(after).no || after) : ''), null, f => rowsChanged(['saveItem', [PW, T.id, '', after, f]], 'Adding row…')); }
-function rowEdit(key){ const it = itemOf(key); rowForm('Edit row ' + (it.no || key), it, f => rowsChanged(['saveItem', [PW, T.id, key, '', f]], 'Saving row…')); }
+function rowEdit(key){
+  const it = itemOf(key);
+  rowForm('Edit row ' + (it.no || key), it, async f => {
+    const same = f.desc === it.desc && f.type === it.type && f.nominal === it.nominal && f.min === it.min && f.max === it.max && f.photo === it.photo;
+    if (!same && !await rowsChanged(['saveItem', [PW, T.id, key, '', f]], 'Saving row…')) return;
+    if (f.to && f.to !== it.no) await rowsChanged(['moveItem', [PW, T.id, key, f.to]], 'Moving row…');
+  });
+}
 async function rowDel(key){
   const it = itemOf(key);
   if (!await confirmBox('Remove row ' + esc(it.no || key) + '?', '<b>' + esc(it.desc) + '</b> will be removed from this and all future ' + esc(T.name) + ' reports, and its row is deleted from the ' + esc(T.name) + ' tab. ' +
@@ -419,7 +438,11 @@ $('rows').addEventListener('drop', e => {
   if (imgs.length && it.photo !== 'NONE') { PH_POS = pos; PH_REPLACE = -1; addPhotos(imgs); }
   else if (!vid || it.type !== 'VIDEO') toast('Drop photos (JPG / PNG)' + (it.type === 'VIDEO' ? ' or a video' : '') + ' here');
 });
-$('camIn').onchange = e => addPhotos(e.target.files);
+$('camIn').onchange = async e => {
+  const rep = PH_REPLACE, n = e.target.files ? e.target.files.length : 0;
+  await addPhotos(e.target.files);
+  if (n && rep < 0 && D && D.items[PH_POS]) { $('moreH').textContent = 'Photo ' + D.items[PH_POS].photos.length + ' added'; show('moreM'); }
+};
 $('galIn').onchange = e => addPhotos(e.target.files);
 let PROC = 0;   // photos still being resized/stamped
 async function addPhotos(files){
