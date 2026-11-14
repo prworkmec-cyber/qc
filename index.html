@@ -138,6 +138,16 @@
 <input id="galIn" type="file" accept="image/*" multiple class="hidden">
 <input id="vidIn" type="file" accept="video/*" class="hidden">
 
+<!-- photo source: camera or gallery -->
+<div class="modal" id="srcM" onclick="if(event.target===this)hide('srcM')"><div class="box" style="max-width:360px">
+  <h3 style="margin:0 0 10px">Add photo</h3>
+  <div class="btns" style="flex-direction:column">
+    <button class="green" style="padding:16px;font-size:18px" onclick="hide('srcM'); cam(PH_POS, -1)">📷 Camera</button>
+    <button style="padding:16px;font-size:18px" onclick="hide('srcM'); gal(PH_POS)">🖼 Gallery</button>
+    <button class="grey" onclick="hide('srcM')">Cancel</button>
+  </div>
+</div></div>
+
 <!-- photo preview -->
 <div class="modal" id="pvM"><div class="box">
   <img id="pvImg" alt="">
@@ -204,6 +214,14 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sept','Oct','No
 let PW = '', NAME = '', TPLS = [], T = null, D = null, OFFSET = 0, tmo;
 
 /* ---------- basics ---------- */
+let ERRN = 0;
+function logErr(where, e){   // written to the ERRORS tab of the WORKMEC QC sheet
+  if (!PW || ++ERRN > 20) return;
+  const m = where + ': ' + (e && (e.stack || e.message) || e) + ' | ' + navigator.userAgent;
+  fetch(API, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ fn:'logError', args:[PW, m.slice(0, 1400)] }) }).catch(() => {});
+}
+window.addEventListener('error', e => logErr('page', e.error || e.message));
+window.addEventListener('unhandledrejection', e => logErr('promise', e.reason));
 function toast(t, ok){ const m=$('msg'); m.textContent=t; m.style.background=ok?'#2E7D32':'#C62828'; m.style.display='block'; clearTimeout(tmo); tmo=setTimeout(()=>m.style.display='none', ok?3000:7000); }
 function show(id){ $(id).style.display='flex'; } function hide(id){ $(id).style.display='none'; }
 function api(fn, args){
@@ -378,11 +396,12 @@ function drawPh(pos){
   let h = a.photos.map((e, i) => '<div class="t" onclick="pv(\'' + p + '\',' + i + ')">' + (e.b ? '<img src="' + url(e.b) + '">' : '<em>loading…</em>') + '<span>' + (i+1) + '</span>' + bd(e) + '</div>').join('');
   if (it.type === 'VIDEO') h += a.video ? '<div class="t" onclick="vp(\'' + p + '\')">' + (a.video.b ? '<video src="' + url(a.video.b) + '#t=0.5" muted playsinline></video>' : '<em>🎥<br>saved video</em>') + '<span>▶ video</span>' + bd(a.video) + '</div>'
                                        : '<div class="addb" onclick="vrOpen(\'' + p + '\')"><b>🎥</b>Record video</div>';
-  if (it.photo !== 'NONE') h += '<div class="addb" onclick="gal(\'' + p + '\')"><b>📷</b>Add photo<small>or drop here</small></div>';   // phone asks: Camera or Gallery; computer: drag & drop
+  if (it.photo !== 'NONE') h += '<div class="addb" onclick="phSrc(\'' + p + '\')"><b>📷</b>Add photo<small>or drop here</small></div>';   // phone asks: Camera or Gallery; computer: drag & drop
   $('p_' + pos).innerHTML = h;
 }
 const URLS = new WeakMap();
 function url(b){ if (!URLS.has(b)) URLS.set(b, URL.createObjectURL(b)); return URLS.get(b); }
+function phSrc(pos){ PH_POS = pos; PH_REPLACE = -1; show('srcM'); }   // Android hides the camera when one button offers both
 function cam(pos, replace){ PH_POS = pos; PH_REPLACE = replace; $('camIn').value = ''; $('camIn').click(); }
 function gal(pos){ PH_POS = pos; PH_REPLACE = -1; $('galIn').value = ''; $('galIn').click(); }
 /* drag & drop photos (or the welding video) onto a row's photo cell */
@@ -485,13 +504,23 @@ async function vp(pos){
 
 /* ---------- draft (kept on the tablet until submitted) ---------- */
 let DB;
-function db(){ return DB || (DB = new Promise((res, rej) => { const r = indexedDB.open('wmqc', 2);
+let STORE_OK = true, DBFAIL = 0;
+function db(){
+  if (DBFAIL && Date.now() - DBFAIL < 60000) return Promise.reject(new Error('storage unavailable'));   // don't wait again for a minute
+  return DB || (DB = new Promise((res, rej) => {
+  const r = indexedDB.open('wmqc', 2), tm = setTimeout(() => rej(new Error('storage blocked (app open twice?)')), 4000);
   r.onupgradeneeded = () => { const x = r.result; ['drafts', 'outbox'].forEach(n => { if (!x.objectStoreNames.contains(n)) x.createObjectStore(n); }); };
-  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); }
-function tx(mode, f, st){ st = st || 'drafts'; return db().then(d => new Promise((res, rej) => { const t = d.transaction(st, mode), q = f(t.objectStore(st)); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); })).catch(() => null); }
-const obAll = () => tx('readonly', s => s.getAll(), 'outbox').then(r => r || []);
-const obPut = v => tx('readwrite', s => s.put(v, v.qid), 'outbox');
-const obDel = k => tx('readwrite', s => s.delete(k), 'outbox');
+  r.onblocked = () => toast('Close the other WORKMEC QC window / tab, then reopen the app');
+  r.onsuccess = () => { clearTimeout(tm); r.result.onversionchange = () => r.result.close(); res(r.result); };   // a newer version can always open it
+  r.onerror = () => { clearTimeout(tm); rej(r.error); };
+}).catch(e => { DB = null; DBFAIL = Date.now(); throw e; })); }
+function tx(mode, f, st){ st = st || 'drafts'; return db().then(d => new Promise((res, rej) => { const t = d.transaction(st, mode), q = f(t.objectStore(st)); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('aborted')); }))
+  .catch(e => { if (STORE_OK) { STORE_OK = false; logErr('storage', e); } return null; }); }
+// outbox: kept in memory as well, so a report is still sent while the app is open even if the phone's storage fails
+const MEMQ = new Map();
+const obAll = async () => { const r = await tx('readonly', s => s.getAll(), 'outbox'); const m = new Map((r || []).map(q => [q.qid, q])); MEMQ.forEach((q, k) => m.set(k, q)); return Array.from(m.values()); };
+const obPut = v => { MEMQ.set(v.qid, v); return tx('readwrite', s => s.put(v, v.qid), 'outbox'); };
+const obDel = k => { MEMQ.delete(k); return tx('readwrite', s => s.delete(k), 'outbox'); };
 const dbGet = k => tx('readonly', s => s.get(k));
 const dbPut = (k, v) => tx('readwrite', s => s.put(v, k));
 const dbDel = k => tx('readwrite', s => s.delete(k));
@@ -534,7 +563,7 @@ function refSet(interactive){
   if (STARTING) return STARTING;
   dirty(); const d = D, t = T;
   STARTING = (async () => {
-    try { d.rid = (await api('startReport', [PW, t.id, d.ref, false])).rid; d.fref = d.ref; }
+    try { const r = await api('startReport', [PW, t.id, d.ref, false]); d.rid = r.rid; d.fref = d.ref; if (r.resumed) resumeFiles(d, r.items); }
     catch (e) {
       if (e.message !== 'DUPLICATE') { if (interactive) throw e; return null; }
       const a = await dupAsk(t, d.ref);
@@ -568,6 +597,17 @@ function refRename(interactive){
     return d.rid;
   })().finally(() => { STARTING = null; });
   return STARTING;
+}
+// photos already uploaded to this cage's unfinished folder are put back into the form (not uploaded again)
+function resumeFiles(d, items){
+  let n = 0; const have = {};
+  Object.keys(d.items).forEach(k => { const a = d.items[k]; a.photos.forEach(e => { if (e.id) have[e.id] = 1; }); if (a.video && a.video.id) have[a.video.id] = 1; });
+  Object.keys(items || {}).forEach(k => { const a = d.items[k], f = items[k]; if (!a) return;
+    f.photos.forEach(id => { if (!have[id]) { a.photos.push({ b: null, id: id, old: 1 }); n++; } });
+    if (f.video && !a.video && !have[f.video]) { a.video = { b: null, id: f.video, old: 1 }; n++; } });
+  if (!n || D !== d) return;
+  T.items.forEach(it => drawPh(it.pos)); count(); dirty(); thumbs();
+  toast(T.refLabel + ' ' + d.ref + ' was started before – its ' + n + ' uploaded photo(s) are back in the form. Fill in the values and submit.', true);
 }
 function dupAsk(t, ref){
   return confirmBox('Already submitted', t.refLabel + ' <b>' + esc(ref) + '</b> already has a ' + esc(t.name) + ' report.<br>Open it to check or change its details, or make a separate new report?',
@@ -648,7 +688,10 @@ async function submitR(){
               d: D, status: 'waiting', err: '', at: Date.now() };
   if (PUMP) { SUBMITTING = true; show('pgM'); pg('Saving…', 0.8); await PUMP; hide('pgM'); }   // only the photo uploading right now finishes (not sent twice); the rest go with the background sender
   SUBMITTING = false;
-  await obPut(q); await dbDel(T.id);
+  await obPut(q);
+  const stored = await tx('readonly', s => s.get(q.qid), 'outbox');
+  if (!stored) await confirmBox('Keep the app open', 'This phone could not save the report to its storage, so it is being sent <b>only while the app stays open</b>.<br>Wait until 📤 Status shows it as submitted before closing the app.', [['OK','pri',0]]);
+  await dbDel(T.id);
   const i = TPLS.indexOf(T); D = null;
   toast('📤 ' + q.label + ' ' + q.d.ref + ' is being submitted in the background – start the next inspection', true);
   await openTpl(i);
@@ -720,6 +763,7 @@ function sendQ(){
         toast('✓ ' + q.label + ' ' + q.d.ref + ' submitted – ' + r.result, !r.ng);
       } catch (e) {
         const net = /internet|reachable|fetch|network/i.test(e.message);
+        if (!net) logErr('send ' + q.label + ' ' + q.d.ref, e);
         q.status = net ? 'waiting' : 'error'; q.err = e.message; q.step = ''; await obPut(q); obRefresh();
         if (net) { clearTimeout(sqT); sqT = setTimeout(sendQ, 20000); return; }   // offline: try again in 20 s
       }
