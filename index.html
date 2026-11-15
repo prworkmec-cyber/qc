@@ -131,7 +131,7 @@
   </div>
 </main>
 
-<div class="bar hidden" id="bar"><div class="in"><span id="cnt"></span><button class="grey" onclick="clearForm()">Clear</button><button class="green" onclick="submitR()">Submit report</button></div></div>
+<div class="bar hidden" id="bar"><div class="in"><span id="cnt"></span><button class="grey" onclick="clearForm()">Clear</button><button class="green" id="subB" onclick="submitR()">Submit report</button></div></div>
 
 <!-- hidden pickers -->
 <input id="camIn" type="file" accept="image/*" capture="environment" class="hidden">
@@ -691,7 +691,8 @@ window.addEventListener('online', () => pump());
 
 /* ---------- submit: upload what is left → build PDF ---------- */
 let SUBBUSY = false;   // a double tap on Submit must not queue the same report twice
-async function submitR(){ if (SUBBUSY) return; SUBBUSY = true; try { await submitR_(); } finally { SUBBUSY = false; } }
+async function submitR(){ if (SUBBUSY) return; SUBBUSY = true; const b = $('subB'), t = b.textContent; b.disabled = true; b.textContent = 'Submitting…';
+  try { await submitR_(); } finally { SUBBUSY = false; b.disabled = false; b.textContent = t; } }
 async function submitR_(){
   dirty();
   if (!D.ref) { $('fRef').focus(); return toast('Enter ' + T.refLabel); }
