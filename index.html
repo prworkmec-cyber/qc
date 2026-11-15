@@ -690,7 +690,9 @@ function pump(){
 window.addEventListener('online', () => pump());
 
 /* ---------- submit: upload what is left → build PDF ---------- */
-async function submitR(){
+let SUBBUSY = false;   // a double tap on Submit must not queue the same report twice
+async function submitR(){ if (SUBBUSY) return; SUBBUSY = true; try { await submitR_(); } finally { SUBBUSY = false; } }
+async function submitR_(){
   dirty();
   if (!D.ref) { $('fRef').focus(); return toast('Enter ' + T.refLabel); }
   const nv = T.items.filter(it => it.type === 'VIDEO' && !D.items[it.pos].video);
@@ -785,6 +787,7 @@ function sendQ(){
         const r = await retry(() => api('finishReport', [PW, q.d.rid, { ref: q.d.ref, date: dd[2] + '-' + dd[1] + '-' + dd[0], notes: q.d.notes, items: out,
                                                                       edit: !!q.d.edit, oref: q.d.edit ? q.d.edit.ref : '' }]), 1);
         await obDel(q.qid);
+        DONE = DONE.filter(x => x.pdf !== r.pdf);   // same report sent again → one entry
         DONE.push({ name: q.label + ' ' + q.d.ref, tname: q.tname, at: stampText(), result: (q.d.edit ? 'Updated (Rev ' + (q.d.edit.rev + 1) + ') – ' : '') + r.result, ng: r.ng, pdf: r.pdf });
         DONE = DONE.slice(-30); try { localStorage.setItem('qcDone', JSON.stringify(DONE)); } catch (e) {}
         toast('✓ ' + q.label + ' ' + q.d.ref + ' submitted – ' + r.result, !r.ng);
