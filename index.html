@@ -462,9 +462,10 @@ async function shrink(file){
   let src;
   try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
   catch (e) { src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('not an image')); i.src = URL.createObjectURL(file); }); }
-  const W0 = src.width, H0 = src.height, k = Math.min(1, 1600 / Math.max(W0, H0));
-  const W = Math.round(W0 * k), H = Math.round(H0 * k), c = document.createElement('canvas');
-  c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(src, 0, 0, W, H);
+  const W0 = src.width, H0 = src.height, k = Math.min(1, 1600 / Math.max(W0, H0)), up = H0 > W0;   // upright photo → turned to landscape
+  const w = Math.round(W0 * k), h = Math.round(H0 * k), W = up ? h : w, H = up ? w : h, c = document.createElement('canvas');
+  c.width = W; c.height = H; const g = c.getContext('2d');
+  if (up) { g.save(); g.translate(0, H); g.rotate(-Math.PI / 2); g.drawImage(src, 0, 0, w, h); g.restore(); } else g.drawImage(src, 0, 0, W, H);
   const fs = Math.max(16, Math.round(Math.min(W, H) * 0.04)), txt = stampText();
   g.font = 'bold ' + fs + 'px Arial'; g.textAlign = 'right'; g.textBaseline = 'bottom';
   g.lineWidth = Math.max(3, fs / 6); g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, W - fs*0.6, H - fs*0.5);
