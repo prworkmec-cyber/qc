@@ -47,8 +47,8 @@
   .okng{display:flex;gap:6px} .okng button{flex:1;background:#E5E7EB;color:#1F2937;padding:12px 6px}
   .okng button.on.ok{background:var(--green);color:#fff} .okng button.on.ng{background:var(--red);color:#fff}
   .ph{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
-  .ph .t{position:relative;width:104px;height:104px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#000}
-  .ph .t img,.ph .t video{width:100%;height:100%;object-fit:cover;display:block}
+  .ph .t{position:relative;width:136px;height:102px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#000}
+  .ph .t img,.ph .t video{width:100%;height:100%;object-fit:cover;display:block} .ph .t img{object-fit:contain}
   .ph .t i{position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-style:normal;padding:1px 5px;border-radius:4px}
   .ph .t i.up{background:#2E7D32}
   .ph .t em{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-style:normal;text-align:center}
@@ -152,7 +152,7 @@
 <!-- photo preview -->
 <div class="modal" id="pvM"><div class="box">
   <img id="pvImg" alt="">
-  <div class="btns"><button class="red" id="pvDel">🗑 Delete</button><button class="grey" id="pvRe">📷 Retake</button><button onclick="hide('pvM')">Close</button></div>
+  <div class="btns"><button class="red" id="pvDel">🗑 Delete</button><button class="grey" id="pvRt">⟳ Rotate</button><button class="grey" id="pvRe">📷 Retake</button><button onclick="hide('pvM')">Close</button></div>
 </div></div>
 
 <!-- drawing full size -->
@@ -451,22 +451,29 @@ async function addPhotos(files){
   PROC++;
   try { for (const f of files) {
     try {
-      const b = await shrink(f);
-      if (PH_REPLACE >= 0) { gone(a.photos[PH_REPLACE]); a.photos[PH_REPLACE] = { b: b, id: null }; PH_REPLACE = -1; } else a.photos.push({ b: b, id: null });
+      const txt = stampText(), b = await shrink(f, 0, txt), e = { b: b, id: null };
+      ORIG.set(e, { f: f, r: 0, txt: txt });   // original kept (this session) so Rotate re-makes the photo with an upright date stamp
+      if (PH_REPLACE >= 0) { gone(a.photos[PH_REPLACE]); a.photos[PH_REPLACE] = e; PH_REPLACE = -1; } else a.photos.push(e);
     } catch (e) { toast('Could not read photo: ' + e.message); }
   } } finally { PROC--; }
   if (D && D.items[pos] === a) { drawPh(pos); count(); dirty(); pump(); }
 }
 // resize to max 1600 px, stamp date/time bottom-right (like the camera stamp in the reports), JPEG
-async function shrink(file){
+const ORIG = new WeakMap();
+// rot = extra quarter turns clockwise chosen by the operator; txt = date stamp ('' = no new stamp)
+async function shrink(file, rot, txt, noAuto){
   let src;
   try { src = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
   catch (e) { src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('not an image')); i.src = URL.createObjectURL(file); }); }
-  const W0 = src.width, H0 = src.height, k = Math.min(1, 1600 / Math.max(W0, H0)), up = H0 > W0;   // upright photo → turned to landscape
-  const w = Math.round(W0 * k), h = Math.round(H0 * k), W = up ? h : w, H = up ? w : h, c = document.createElement('canvas');
+  const W0 = src.width, H0 = src.height, k = Math.min(1, 1600 / Math.max(W0, H0));
+  const q = ((!noAuto && H0 > W0 ? 3 : 0) + (rot || 0)) % 4;   // upright photo → turned to landscape (what the PDF shows)
+  const w = Math.round(W0 * k), h = Math.round(H0 * k), W = q % 2 ? h : w, H = q % 2 ? w : h, c = document.createElement('canvas');
   c.width = W; c.height = H; const g = c.getContext('2d');
-  if (up) { g.save(); g.translate(0, H); g.rotate(-Math.PI / 2); g.drawImage(src, 0, 0, w, h); g.restore(); } else g.drawImage(src, 0, 0, W, H);
-  const fs = Math.max(16, Math.round(Math.min(W, H) * 0.04)), txt = stampText();
+  g.save(); if (q === 1) g.translate(W, 0); else if (q === 2) g.translate(W, H); else if (q === 3) g.translate(0, H);
+  g.rotate(q * Math.PI / 2); g.drawImage(src, 0, 0, w, h); g.restore();
+  if (txt === undefined) txt = stampText();
+  if (!txt) return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+  const fs = Math.max(16, Math.round(Math.min(W, H) * 0.04));
   g.font = 'bold ' + fs + 'px Arial'; g.textAlign = 'right'; g.textBaseline = 'bottom';
   g.lineWidth = Math.max(3, fs / 6); g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(txt, W - fs*0.6, H - fs*0.5);
   g.fillStyle = '#FFB300'; g.fillText(txt, W - fs*0.6, H - fs*0.5);
@@ -478,6 +485,15 @@ function pv(pos, i){
   if (e.old && D.rid) api('getFile', [PW, D.rid, e.id, false]).then(r => { if (D && D.items[pos].photos[i] === e) $('pvImg').src = 'data:' + r.mime + ';base64,' + r.b64; }).catch(() => {});
   $('pvDel').onclick = () => { gone(D.items[pos].photos.splice(i, 1)[0]); hide('pvM'); drawPh(pos); count(); dirty(); };
   $('pvRe').onclick = () => { hide('pvM'); cam(pos, i); };
+  $('pvRt').onclick = async () => {   // turn 90° clockwise; the old copy in Drive is replaced
+    const a = D.items[pos], cur = a.photos[i]; if (!cur || !cur.b) return toast('Wait until the photo has loaded');
+    const o = ORIG.get(cur), r = o ? (o.r + 1) % 4 : 1;
+    PROC++; let b;
+    try { b = o ? await shrink(o.f, r, o.txt) : await shrink(cur.b, 1, '', true); } catch (e) { PROC--; return toast('Could not rotate: ' + e.message); }
+    PROC--;
+    const n = { b: b, id: null }; if (o) ORIG.set(n, { f: o.f, r: r, txt: o.txt });
+    gone(cur); a.photos[i] = n; $('pvImg').src = url(b); drawPh(pos); count(); dirty(); pump(); pv(pos, i);
+  };
 }
 
 /* ---------- video (in-app recorder, 720p, max 30 s, ~2 Mbps ≈ 8 MB) ---------- */
